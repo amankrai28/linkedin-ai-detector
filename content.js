@@ -13,6 +13,12 @@ const SELECTORS = {
     // Profile activity page selectors
     'div.profile-creator-shared-feed-update__container',
     'div.profile-creator-shared-feed-update__mini-container',
+    'div.profile-creator-shared-feed-update__content',
+    // Occludable update wrapper (used on activity/recent-activity pages)
+    'div.occludable-update',
+    // Article-based containers (LinkedIn sometimes wraps posts in <article>)
+    'article.profile-creator-shared-feed-update__container',
+    'article[data-urn]',
     // Activity URN-based selectors (works on both feed and profile pages)
     'div[data-urn^="urn:li:activity"]',
     'div[data-urn*="activity"]',
@@ -22,6 +28,11 @@ const SELECTORS = {
     'span.break-words',
     'div.feed-shared-update-v2__description',
     'div.update-components-text',
+    // Activity page text selectors
+    'div.update-components-text__text-view',
+    'div[class*="update-components-text"]',
+    // Generic fallback: LTR text blocks within post containers
+    'div[dir="ltr"]',
   ],
 };
 
@@ -48,52 +59,65 @@ function findPostContainers() {
   }
 
   // Heuristic fallback: containers with both a text block and social
-  // action buttons (like/comment/repost). Works on profile activity
-  // pages where class names may differ from the main feed.
-  if (found.size === 0) {
-    console.warn(
-      LOG_PREFIX,
-      'Primary selectors matched 0 posts — trying heuristic fallback'
+  // action buttons (like/comment/repost). Always runs as a supplement
+  // to catch posts on activity pages where class names may differ.
+  const primaryCount = found.size;
+  try {
+    const candidates = document.querySelectorAll(
+      'div[data-urn], div[data-id], article[data-urn], div.occludable-update'
     );
-    try {
-      const candidates = document.querySelectorAll(
-        'div[data-urn], div[data-id]'
-      );
-      candidates.forEach((el) => {
-        if (el.hasAttribute(PROCESSED_ATTR) || found.has(el)) return;
+    candidates.forEach((el) => {
+      if (el.hasAttribute(PROCESSED_ATTR) || found.has(el)) return;
 
-        const hasText =
-          el.querySelector('span.break-words') ||
-          el.querySelector('div[dir="ltr"]');
+      const hasText =
+        el.querySelector('span.break-words') ||
+        el.querySelector('div[dir="ltr"]') ||
+        el.querySelector('div[class*="update-components-text"]');
 
-        const hasSocialActions =
-          el.querySelector('button[aria-label*="Like"]') ||
-          el.querySelector('button[aria-label*="like"]') ||
-          el.querySelector('button[aria-label*="Comment"]') ||
-          el.querySelector('button[aria-label*="Repost"]') ||
-          el.querySelector('.social-actions-button') ||
-          el.querySelector('.feed-shared-social-action-bar') ||
-          el.querySelector('.social-details-social-counts');
+      const hasSocialActions =
+        el.querySelector('button[aria-label*="Like"]') ||
+        el.querySelector('button[aria-label*="like"]') ||
+        el.querySelector('button[aria-label*="Comment"]') ||
+        el.querySelector('button[aria-label*="Repost"]') ||
+        el.querySelector('.social-actions-button') ||
+        el.querySelector('.feed-shared-social-action-bar') ||
+        el.querySelector('.social-details-social-counts');
 
-        const hasAvatar =
-          el.querySelector('img.feed-shared-actor__avatar-image') ||
-          el.querySelector('img[alt*="profile"]') ||
-          el.querySelector('a[href*="/in/"] img');
+      const hasAvatar =
+        el.querySelector('img.feed-shared-actor__avatar-image') ||
+        el.querySelector('img[alt*="profile"]') ||
+        el.querySelector('a[href*="/in/"] img');
 
-        // Match if text + social actions, or text + avatar (original heuristic)
-        if (hasText && (hasSocialActions || hasAvatar)) {
-          found.set(el, 'heuristic-fallback (text + social/avatar)');
-        }
-      });
-      if (found.size > 0) {
-        console.log(
-          LOG_PREFIX,
-          `Heuristic fallback found ${found.size} post(s)`
-        );
+      // Match if text + social actions, or text + avatar
+      if (hasText && (hasSocialActions || hasAvatar)) {
+        found.set(el, 'heuristic-fallback (text + social/avatar)');
       }
-    } catch (e) {
-      console.warn(LOG_PREFIX, 'Heuristic fallback failed:', e);
+    });
+    const heuristicCount = found.size - primaryCount;
+    if (heuristicCount > 0) {
+      console.log(
+        LOG_PREFIX,
+        `Heuristic fallback found ${heuristicCount} additional post(s)`
+      );
     }
+  } catch (e) {
+    console.warn(LOG_PREFIX, 'Heuristic fallback failed:', e);
+  }
+
+  // Deduplicate nested containers — if a matched element is a descendant
+  // of another match, remove the inner one to prevent double badges.
+  const elements = Array.from(found.keys());
+  const nested = new Set();
+  for (let i = 0; i < elements.length; i++) {
+    for (let j = 0; j < elements.length; j++) {
+      if (i !== j && elements[i].contains(elements[j])) {
+        nested.add(elements[j]);
+      }
+    }
+  }
+  if (nested.size > 0) {
+    console.log(LOG_PREFIX, `Removed ${nested.size} nested duplicate(s)`);
+    nested.forEach(el => found.delete(el));
   }
 
   // Log which selector matched each container for debugging
@@ -154,14 +178,19 @@ function sleep(ms) {
 async function processPost(container) {
   if (container.hasAttribute(PROCESSED_ATTR)) return;
 
-  // Mark early to prevent duplicate processing during async wait
+  // Check for text BEFORE marking as processed — LinkedIn may have added the
+  // container to the DOM but not yet populated it with text content.  If we
+  // mark it now, later retries will skip it and the post never gets scored.
+  const earlyText = extractPostText(container);
+  if (!earlyText) return;
+
+  // Mark as processed now that we know there's text to score
   container.setAttribute(PROCESSED_ATTR, 'true');
 
   // Expand truncated posts by clicking "see more"
   const seeMoreBtn = findSeeMoreButton(container);
   if (seeMoreBtn) {
-    const beforeText = extractPostText(container);
-    const beforeWords = beforeText ? beforeText.split(/\s+/).length : 0;
+    const beforeWords = earlyText.split(/\s+/).length;
     seeMoreBtn.click();
     await sleep(100);
     const afterText = extractPostText(container);
@@ -249,6 +278,7 @@ let lastKnownUrl = window.location.href;
 function detectPageType() {
   if (location.pathname.includes('/feed')) return 'feed';
   if (location.pathname.match(/\/in\/[^/]+\/recent-activity/)) return 'profile-activity';
+  if (location.pathname.match(/\/in\/[^/]+\/detail\/recent-activity/)) return 'profile-activity';
   if (location.pathname.match(/\/in\/[^/]+/)) return 'profile';
   return 'other';
 }
