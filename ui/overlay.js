@@ -33,7 +33,8 @@ function renderScoreBadge(postContainer, postText, result) {
   const badge = document.createElement('div');
   badge.className = `laid-score-badge ${getScoreColor(score)}`;
   badge.textContent = score;
-  badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100 \u2014 ${getScoreLabel(score)}`);
+  const partialSuffix = (result && result.partial) ? ' (limited text)' : '';
+  badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100${partialSuffix} \u2014 ${getScoreLabel(score)}`);
   badge.setAttribute('data-score', score);
 
   // Store full result for later use (click-to-expand in Phase 3)

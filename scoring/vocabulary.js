@@ -2,12 +2,13 @@
  * LinkedIn AI Detector — Layer 1: Vocabulary Fingerprinting
  * Max score: 30 points
  *
- * Detects AI-overrepresented words and phrases across 5 sub-categories:
+ * Detects AI-overrepresented words and phrases across 6 sub-categories:
  *   Tier 1 (dead giveaways): 3 pts each, cap 15
  *   Tier 2 (moderate signals): 1.5 pts each, cap 12
- *   Tier 3 (contextual): 0.5 pts each, 2x if 3+ co-occur, cap 8
- *   Copula avoidance: 2 pts each, cap 6
- *   Communication artifacts: 4 pts each, cap 8
+ *   Tier 3 (contextual): 0.5 pts each, 2x if 3+ co-occur, cap 8 (gated: only scores if 3+ T1/T2 present)
+ *   Copula avoidance: 2 pts each, cap 10
+ *   Communication artifacts: 4 pts each, cap 12
+ *   Co-occurrence density: bonus for multiple AI words in same post, cap 10
  */
 
 const VOCAB_MAX = 30;
@@ -53,7 +54,7 @@ const COPULA_PHRASES = [
   'boasts a', 'features a', 'offers a'
 ];
 const COPULA_PTS = 2;
-const COPULA_CAP = 6;
+const COPULA_CAP = 10;
 
 const COMM_ARTIFACTS = [
   'I hope this helps', 'Great question!', 'Certainly!', 'Of course!',
@@ -61,7 +62,7 @@ const COMM_ARTIFACTS = [
   'Here is a', 'As of my last', 'based on available information'
 ];
 const COMM_PTS = 4;
-const COMM_CAP = 8;
+const COMM_CAP = 12;
 
 // ─── HELPERS ───
 
@@ -95,7 +96,8 @@ function scoreVocabulary(text) {
     tier2: { matches: [], raw: 0 },
     tier3: { matches: [], raw: 0, clusterApplied: false },
     copula: { matches: [], raw: 0 },
-    artifacts: { matches: [], raw: 0 }
+    artifacts: { matches: [], raw: 0 },
+    coOccurrence: { count: 0, raw: 0 }
   };
 
   // Tier 1: Dead giveaways
@@ -113,17 +115,26 @@ function scoreVocabulary(text) {
   details.tier2.raw = Math.min(t2.length * TIER2_PTS, TIER2_CAP);
   t2.forEach(p => signals.push(`"${p}" (vocabulary tier 2)`));
 
-  // Tier 3: Contextual signals with cluster multiplier
+  // Tier 3: Contextual signals — only score if 3+ T1/T2 words already present
+  // These words are too common in normal business writing to count on their own.
   const t3 = countMatches(text, TIER3_WORDS, true);
   details.tier3.matches = t3;
-  let t3raw = t3.length * TIER3_PTS;
-  if (t3.length >= TIER3_CLUSTER_THRESHOLD) {
-    t3raw *= TIER3_MULTIPLIER;
-    details.tier3.clusterApplied = true;
-  }
-  details.tier3.raw = Math.min(t3raw, TIER3_CAP);
-  if (t3.length > 0) {
-    signals.push(`${t3.length} contextual buzzwords: ${t3.slice(0, 5).map(w => `"${w}"`).join(', ')}${t3.length > 5 ? '...' : ''}`);
+  const t1t2Count = t1.length + t2.length;
+  if (t1t2Count >= 3) {
+    let t3raw = t3.length * TIER3_PTS;
+    if (t3.length >= TIER3_CLUSTER_THRESHOLD) {
+      t3raw *= TIER3_MULTIPLIER;
+      details.tier3.clusterApplied = true;
+    }
+    details.tier3.raw = Math.min(t3raw, TIER3_CAP);
+    if (t3.length > 0) {
+      signals.push(`${t3.length} contextual buzzwords (gated by ${t1t2Count} T1+T2): ${t3.slice(0, 5).map(w => `"${w}"`).join(', ')}${t3.length > 5 ? '...' : ''}`);
+    }
+  } else {
+    details.tier3.raw = 0;
+    if (t3.length > 0) {
+      signals.push(`${t3.length} contextual buzzwords ignored (only ${t1t2Count} T1+T2 words, need 3+)`);
+    }
   }
 
   // Copula avoidance
@@ -138,9 +149,25 @@ function scoreVocabulary(text) {
   details.artifacts.raw = Math.min(art.length * COMM_PTS, COMM_CAP);
   art.forEach(p => signals.push(`"${p}" (communication artifact)`));
 
+  // Co-occurrence density: count distinct Tier 1 + Tier 2 words in same post
+  const coOccurrenceCount = t1.length + t2.length;
+  details.coOccurrence.count = coOccurrenceCount;
+  let coOccurrenceBonus = 0;
+  if (coOccurrenceCount >= 5) {
+    coOccurrenceBonus = 10;
+  } else if (coOccurrenceCount >= 4) {
+    coOccurrenceBonus = 6;
+  } else if (coOccurrenceCount >= 3) {
+    coOccurrenceBonus = 4;
+  }
+  details.coOccurrence.raw = coOccurrenceBonus;
+  if (coOccurrenceBonus > 0) {
+    signals.push(`AI vocabulary co-occurrence: ${coOccurrenceCount} distinct T1+T2 words (+${coOccurrenceBonus})`);
+  }
+
   // Sum all sub-scores, cap at layer max
   const rawTotal = details.tier1.raw + details.tier2.raw + details.tier3.raw
-    + details.copula.raw + details.artifacts.raw;
+    + details.copula.raw + details.artifacts.raw + details.coOccurrence.raw;
   const score = Math.min(rawTotal, VOCAB_MAX);
 
   return { score, signals, details };

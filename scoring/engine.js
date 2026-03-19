@@ -7,17 +7,22 @@
  * Layer contributions:
  *   Vocabulary:  max 30 pts (scoreVocabulary)
  *   Structure:   max 30 pts (scoreStructure)
- *   Stylometry:  max 25 pts (scoreStylometry)
+ *   Stylometry:  max 38 pts (scoreStylometry)
  *   LinkedIn:    max 15 pts (scoreLinkedIn)
- *   Raw total:   max 100 pts
+ *   Raw total:   max 113 pts (capped to 100)
+ *
+ * Short post handling (< 100 words):
+ *   Statistical detectors (burstiness, lexical diversity, sentence variance,
+ *   paragraph uniformity) are zeroed out — not enough data.
+ *   Result includes partial: true flag.
  *
  * Normalization:
  *   < 50 words:  raw × 1.5 (fewer signals = each matters more)
  *   50+ words:   raw × 1.0
  *
  * Convergence bonus:
- *   4+ categories firing: +8 pts
- *   5+ categories firing: +12 pts
+ *   4+ categories firing: +10 pts
+ *   5+ categories firing: +15 pts
  */
 
 function scorePost(text) {
@@ -44,6 +49,24 @@ function scorePost(text) {
   const stylometry = scoreStylometry(text);
   const linkedin = scoreLinkedIn(text);
 
+  // Short-post gating: zero out statistical detectors that need more data
+  const partial = wordCount < 100;
+  if (partial) {
+    const skipKeys = ['burstiness', 'lexicalDiversity', 'sentenceLengthVariance', 'paragraphUniformity'];
+    for (const key of skipKeys) {
+      if (stylometry.details[key] > 0) {
+        stylometry.score -= stylometry.details[key];
+        stylometry.details[key] = 0;
+      }
+    }
+    // Remove signals related to skipped detectors
+    const skipPatterns = ['burstiness', 'type-token', 'sentence lengths', 'paragraph lengths'];
+    stylometry.signals = stylometry.signals.filter(s => {
+      const lower = s.toLowerCase();
+      return !skipPatterns.some(p => lower.includes(p));
+    });
+  }
+
   const rawTotal = vocabulary.score + structure.score + stylometry.score + linkedin.score;
 
   // Post-length normalization (no penalty for long posts)
@@ -65,20 +88,24 @@ function scorePost(text) {
     vocabulary.details.tier1.raw > 0,
     vocabulary.details.tier2.raw > 0,
     vocabulary.details.tier3.raw > 0,
+    vocabulary.details.coOccurrence.raw > 0,
     structure.details.broetry > 0,
     structure.details.hookStoryLessonCTA > 0,
     structure.details.negativeParallelisms > 0,
     structure.details.ruleOfThree > 0,
     stylometry.details.sentenceLengthVariance > 0,
+    stylometry.details.burstiness > 0,
+    stylometry.details.lexicalDiversity > 0,
+    stylometry.details.sentenceStarterRepetition > 0,
     linkedin.details.scrollManipulation > 0,
     linkedin.details.emojiAsStructure > 0
   ].filter(Boolean).length;
 
   let convergenceBonus = 0;
   if (firingCategories >= 5) {
-    convergenceBonus = 12;
+    convergenceBonus = 15;
   } else if (firingCategories >= 4) {
-    convergenceBonus = 8;
+    convergenceBonus = 10;
   }
 
   const finalScore = Math.min(normalized + convergenceBonus, 100);
@@ -100,7 +127,7 @@ function scorePost(text) {
     layers: {
       vocabulary: { score: vocabulary.score, max: 30, signals: vocabulary.signals, details: vocabulary.details },
       structure: { score: structure.score, max: 30, signals: structure.signals, details: structure.details },
-      stylometry: { score: stylometry.score, max: 25, signals: stylometry.signals, details: stylometry.details },
+      stylometry: { score: stylometry.score, max: 38, signals: stylometry.signals, details: stylometry.details },
       linkedin: { score: linkedin.score, max: 15, signals: linkedin.signals, details: linkedin.details }
     },
     topSignals,
@@ -108,6 +135,7 @@ function scorePost(text) {
     rawTotal,
     normalizationMultiplier: multiplier,
     convergenceBonus,
-    firingCategories
+    firingCategories,
+    partial
   };
 }

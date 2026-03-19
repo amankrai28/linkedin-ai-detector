@@ -229,26 +229,81 @@ function debounce(fn, ms) {
 const debouncedProcess = debounce(processAllPosts, DEBOUNCE_MS);
 
 const observer = new MutationObserver((mutations) => {
-  // Only process if new nodes were actually added
-  const hasNewNodes = mutations.some(
-    (m) => m.type === 'childList' && m.addedNodes.length > 0
+  // Process on any childList mutation with added nodes OR large subtree changes
+  const dominated = mutations.some(
+    (m) =>
+      (m.type === 'childList' && m.addedNodes.length > 0) ||
+      (m.type === 'childList' && m.removedNodes.length > 0)
   );
-  if (hasNewNodes) {
+  if (dominated) {
     debouncedProcess();
   }
 });
 
 observer.observe(document.body, { childList: true, subtree: true });
 
-// Detect page type for debugging
-const pageType = location.pathname.includes('/feed')
-  ? 'feed'
-  : location.pathname.match(/\/in\/[^/]+\/recent-activity/)
-    ? 'profile-activity'
-    : location.pathname.match(/\/in\/[^/]+/)
-      ? 'profile'
-      : 'other';
-console.log(LOG_PREFIX, `Content script loaded — page type: ${pageType}, url: ${location.pathname}`);
+// ─── SPA NAVIGATION DETECTION ───
+
+let lastKnownUrl = window.location.href;
+
+function detectPageType() {
+  if (location.pathname.includes('/feed')) return 'feed';
+  if (location.pathname.match(/\/in\/[^/]+\/recent-activity/)) return 'profile-activity';
+  if (location.pathname.match(/\/in\/[^/]+/)) return 'profile';
+  return 'other';
+}
+
+function onNavigationDetected(newUrl) {
+  console.log(LOG_PREFIX, `Navigation detected: ${newUrl}`);
+  console.log(LOG_PREFIX, `Page type: ${detectPageType()}`);
+  // Wait for LinkedIn to render the new page content, then re-scan
+  setTimeout(() => {
+    processAllPosts();
+  }, 500);
+}
+
+// 1. popstate — browser back/forward buttons
+window.addEventListener('popstate', () => {
+  const newUrl = window.location.href;
+  if (newUrl !== lastKnownUrl) {
+    lastKnownUrl = newUrl;
+    onNavigationDetected(newUrl);
+  }
+});
+
+// 2. Intercept pushState/replaceState — LinkedIn uses these for SPA navigation
+const originalPushState = history.pushState;
+history.pushState = function (...args) {
+  originalPushState.apply(this, args);
+  const newUrl = window.location.href;
+  if (newUrl !== lastKnownUrl) {
+    lastKnownUrl = newUrl;
+    onNavigationDetected(newUrl);
+  }
+};
+
+const originalReplaceState = history.replaceState;
+history.replaceState = function (...args) {
+  originalReplaceState.apply(this, args);
+  const newUrl = window.location.href;
+  if (newUrl !== lastKnownUrl) {
+    lastKnownUrl = newUrl;
+    onNavigationDetected(newUrl);
+  }
+};
+
+// 3. Fallback polling — catch any navigation method we missed
+setInterval(() => {
+  const currentUrl = window.location.href;
+  if (currentUrl !== lastKnownUrl) {
+    lastKnownUrl = currentUrl;
+    onNavigationDetected(currentUrl);
+  }
+}, 500);
+
+// ─── INIT ───
+
+console.log(LOG_PREFIX, `Content script loaded — page type: ${detectPageType()}, url: ${location.href}`);
 
 // Process posts already in the DOM
 processAllPosts();

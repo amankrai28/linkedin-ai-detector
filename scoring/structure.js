@@ -4,8 +4,8 @@
  *
  * Detects template-like post structures:
  *   Broetry format: 0–8 pts
- *   Hook-Story-Lesson-CTA arc: 0–10 pts
- *   Numbered wisdom lists: 0–7 pts
+ *   Hook-Story-Lesson-CTA arc: 0–5 pts (only full combo scores)
+ *   Numbered wisdom lists: 0–4 pts
  *   Formulaic endings: 0–5 pts
  *   Negative parallelisms: 0–4 pts
  *   Rule of three: 0–4 pts
@@ -64,25 +64,20 @@ function detectHookStoryLessonCTA(text) {
   const sentences = splitSentences(text);
   if (sentences.length < 3) return { score: 0, signals: [] };
 
-  let score = 0;
   const signals = [];
 
   // Hook: first sentence is question, exclamation, or strong claim
   const firstSentence = sentences[0];
-  if (/[?!]/.test(firstSentence)) {
-    score += 2;
-    signals.push('Hook detected (opening question/exclamation)');
-  }
+  const hasHook = /[?!]/.test(firstSentence);
+  if (hasHook) signals.push('Hook detected (opening question/exclamation)');
 
   // Story: first-person narrative markers
   const storyMarkers = [
     'i was', 'i remember', 'last week', 'last month', 'last year',
     'years ago', 'a few years ago', 'when i was', 'one day', 'recently'
   ];
-  if (storyMarkers.some(m => lower.includes(m))) {
-    score += 2;
-    signals.push('Story element detected (personal narrative)');
-  }
+  const hasStory = storyMarkers.some(m => lower.includes(m));
+  if (hasStory) signals.push('Story element detected (personal narrative)');
 
   // Lesson: takeaway markers
   const lessonMarkers = [
@@ -90,10 +85,8 @@ function detectHookStoryLessonCTA(text) {
     'key takeaway', 'what this taught me', 'the biggest lesson',
     'what i realized', 'my takeaway'
   ];
-  if (lessonMarkers.some(m => lower.includes(m))) {
-    score += 3;
-    signals.push('Lesson element detected (explicit takeaway)');
-  }
+  const hasLesson = lessonMarkers.some(m => lower.includes(m));
+  if (hasLesson) signals.push('Lesson element detected (explicit takeaway)');
 
   // CTA: last sentence is question or engagement prompt
   const lastSentence = sentences[sentences.length - 1].toLowerCase();
@@ -102,12 +95,15 @@ function detectHookStoryLessonCTA(text) {
     'repost if', 'tag someone', 'let me know', 'drop a comment',
     'comment below'
   ];
-  if (/\?$/.test(lastSentence.trim()) || ctaMarkers.some(m => lastSentence.includes(m))) {
-    score += 3;
-    signals.push('CTA detected (engagement prompt at end)');
-  }
+  const hasCTA = /\?$/.test(lastSentence.trim()) || ctaMarkers.some(m => lastSentence.includes(m));
+  if (hasCTA) signals.push('CTA detected (engagement prompt at end)');
 
-  return { score: Math.min(score, 10), signals };
+  // Only score if ALL FOUR elements are present — individual elements are just good writing
+  const allFour = hasHook && hasStory && hasLesson && hasCTA;
+  const score = allFour ? 5 : 0;
+  if (allFour) signals.push('Full Hook-Story-Lesson-CTA arc detected');
+
+  return { score, signals };
 }
 
 function detectNumberedWisdom(text) {
@@ -120,7 +116,7 @@ function detectNumberedWisdom(text) {
     const items = text.match(hasNumberedItems);
     if (items && items.length >= 3) {
       return {
-        score: 7,
+        score: 4,
         signals: [`Numbered wisdom list: "${text.slice(0, 50).trim()}..."`]
       };
     }
@@ -137,8 +133,8 @@ function detectFormulaicEndings(text) {
   const signals = [];
 
   const patterns = [
-    { re: /\b(agree|thoughts)\?\s*$/i, pts: 3, label: 'Formulaic ending: "Agree?/Thoughts?"' },
-    { re: /what do you think\?\s*$/i, pts: 3, label: 'Formulaic ending: "What do you think?"' },
+    { re: /\b(agree|thoughts)\?\s*$/i, pts: 1, label: 'Formulaic ending: "Agree?/Thoughts?"' },
+    { re: /what do you think\?\s*$/i, pts: 1, label: 'Formulaic ending: "What do you think?"' },
     { re: /(repost|share) if (this resonated|you agree)/i, pts: 5, label: 'Formulaic ending: "Share/Repost if..."' },
     { re: /tag someone who needs this/i, pts: 5, label: 'Formulaic ending: "Tag someone..."' },
     { re: /follow me for more/i, pts: 4, label: 'Formulaic ending: "Follow me for more"' },
@@ -235,19 +231,6 @@ function scoreStructure(text) {
     signals.push(...r.signals);
     details[names[i]] = r.score;
   });
-
-  // Story + Lesson + CTA combo bonus: if all three detected together, add 3 pts
-  const hslResult = results[1]; // hookStoryLessonCTA
-  const hasStory = hslResult.signals.some(s => s.includes('Story element'));
-  const hasLesson = hslResult.signals.some(s => s.includes('Lesson element'));
-  const hasCTA = hslResult.signals.some(s => s.includes('CTA detected'));
-  if (hasStory && hasLesson && hasCTA) {
-    rawTotal += 3;
-    signals.push('Story + Lesson + CTA combo bonus (+3)');
-    details.comboBonus = 3;
-  } else {
-    details.comboBonus = 0;
-  }
 
   const score = Math.min(rawTotal, STRUCTURE_MAX);
   return { score, signals, details };
