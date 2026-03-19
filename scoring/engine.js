@@ -7,17 +7,17 @@
  * Layer contributions:
  *   Vocabulary:  max 30 pts (scoreVocabulary)
  *   Structure:   max 30 pts (scoreStructure)
- *   Stylometry:  max 25 pts (scoreStylometry)
+ *   Stylometry:  max 35 pts (scoreStylometry)
  *   LinkedIn:    max 15 pts (scoreLinkedIn)
- *   Raw total:   max 100 pts
+ *   Raw total:   max 110 pts (capped to 100)
  *
  * Normalization:
  *   < 50 words:  raw × 1.5 (fewer signals = each matters more)
  *   50+ words:   raw × 1.0
  *
  * Convergence bonus:
- *   4+ categories firing: +8 pts
- *   5+ categories firing: +12 pts
+ *   4+ categories firing: +10 pts
+ *   5+ categories firing: +15 pts
  */
 
 function scorePost(text) {
@@ -65,20 +65,23 @@ function scorePost(text) {
     vocabulary.details.tier1.raw > 0,
     vocabulary.details.tier2.raw > 0,
     vocabulary.details.tier3.raw > 0,
+    vocabulary.details.coOccurrence.raw > 0,
     structure.details.broetry > 0,
     structure.details.hookStoryLessonCTA > 0,
     structure.details.negativeParallelisms > 0,
     structure.details.ruleOfThree > 0,
     stylometry.details.sentenceLengthVariance > 0,
+    stylometry.details.burstiness > 0,
+    stylometry.details.lexicalDiversity > 0,
     linkedin.details.scrollManipulation > 0,
     linkedin.details.emojiAsStructure > 0
   ].filter(Boolean).length;
 
   let convergenceBonus = 0;
   if (firingCategories >= 5) {
-    convergenceBonus = 12;
+    convergenceBonus = 15;
   } else if (firingCategories >= 4) {
-    convergenceBonus = 8;
+    convergenceBonus = 10;
   }
 
   const finalScore = Math.min(normalized + convergenceBonus, 100);
@@ -100,7 +103,7 @@ function scorePost(text) {
     layers: {
       vocabulary: { score: vocabulary.score, max: 30, signals: vocabulary.signals, details: vocabulary.details },
       structure: { score: structure.score, max: 30, signals: structure.signals, details: structure.details },
-      stylometry: { score: stylometry.score, max: 25, signals: stylometry.signals, details: stylometry.details },
+      stylometry: { score: stylometry.score, max: 35, signals: stylometry.signals, details: stylometry.details },
       linkedin: { score: linkedin.score, max: 15, signals: linkedin.signals, details: linkedin.details }
     },
     topSignals,
