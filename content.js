@@ -40,6 +40,38 @@ const PROCESSED_ATTR = 'data-ai-scored';
 const DEBOUNCE_MS = 150;
 const LOG_PREFIX = '[AI Detector]';
 
+// ─── SETTINGS ───
+
+let extensionSettings = { enabled: true, displayMode: 'badge' };
+
+// Load settings from background on init
+try {
+  chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (settings) => {
+    if (settings) extensionSettings = settings;
+  });
+} catch (e) {
+  // Extension context may be invalidated
+}
+
+// Listen for settings changes from popup/background
+try {
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'SETTINGS_CHANGED') {
+      extensionSettings = msg.settings;
+      console.log(LOG_PREFIX, 'Settings updated:', extensionSettings);
+      if (!extensionSettings.enabled || extensionSettings.displayMode === 'off') {
+        // Hide all existing badges
+        document.querySelectorAll('.laid-score-badge').forEach(b => b.style.display = 'none');
+      } else {
+        // Show all badges
+        document.querySelectorAll('.laid-score-badge').forEach(b => b.style.display = '');
+      }
+    }
+  });
+} catch (e) {
+  // Extension context may be invalidated
+}
+
 // ─── DOM EXTRACTION ───
 
 function findPostContainers() {
@@ -177,6 +209,7 @@ function sleep(ms) {
 
 async function processPost(container) {
   if (container.hasAttribute(PROCESSED_ATTR)) return;
+  if (!extensionSettings.enabled || extensionSettings.displayMode === 'off') return;
 
   // Check for text BEFORE marking as processed — LinkedIn may have added the
   // container to the DOM but not yet populated it with text content.  If we
@@ -227,7 +260,15 @@ async function processPost(container) {
 
   // Render badge (defined in ui/overlay.js)
   if (typeof renderScoreBadge === 'function') {
-    renderScoreBadge(container, text, result);
+    const score = renderScoreBadge(container, text, result);
+    // Report to background for session stats
+    if (score >= 0 && result) {
+      try {
+        chrome.runtime.sendMessage({ type: 'POST_SCORED', score: result.score });
+      } catch (e) {
+        // Extension context may be invalidated
+      }
+    }
   } else {
     console.warn(LOG_PREFIX, 'renderScoreBadge not available');
   }

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn AI Detector</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      color: #333;
+      background: #fff;
+    }
+
+    .popup-header {
+      padding: 16px;
+      background: linear-gradient(135deg, #0a66c2, #004182);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .popup-header-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .popup-header-text h1 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .popup-header-text span {
+      font-size: 11px;
+      opacity: 0.8;
+    }
+
+    .popup-section {
+      padding: 14px 16px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .popup-section:last-child {
+      border-bottom: none;
+    }
+
+    .popup-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      margin-bottom: 10px;
+    }
+
+    /* Toggle switch */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .toggle-row label {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #ccc;
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background: #0a66c2;
+    }
+
+    .toggle-switch input:checked + .toggle-slider::before {
+      transform: translateX(18px);
+    }
+
+    /* Display mode radio buttons */
+    .radio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .radio-option input[type="radio"] {
+      accent-color: #0a66c2;
+    }
+
+    .radio-option span {
+      font-size: 12px;
+    }
+
+    /* Stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-box {
+      background: #f7f7f7;
+      border-radius: 6px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .stat-box.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #333;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .score-bands {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      margin-top: 4px;
+    }
+
+    .band {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+    }
+
+    .band-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .band-dot.green { background: #2e7d32; }
+    .band-dot.amber { background: #f57c00; }
+    .band-dot.red { background: #c62828; }
+
+    /* API key */
+    .api-key-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: monospace;
+      margin-top: 6px;
+    }
+
+    .api-key-input:focus {
+      outline: none;
+      border-color: #0a66c2;
+    }
+
+    .api-key-note {
+      font-size: 10px;
+      color: #999;
+      margin-top: 4px;
+    }
+
+    /* Footer */
+    .popup-footer {
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 10px;
+      color: #aaa;
+    }
+
+    .popup-footer a {
+      color: #0a66c2;
+      text-decoration: none;
+    }
+
+    .reset-link {
+      font-size: 11px;
+      color: #0a66c2;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      padding: 0;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-header">
+    <div class="popup-header-icon">AI</div>
+    <div class="popup-header-text">
+      <h1>LinkedIn AI Detector</h1>
+      <span>v1.0.0 — Heuristic Detection</span>
+    </div>
+  </div>
+
+  <div class="popup-section">
+    <div class="toggle-row">
+      <label for="enableToggle">Detection enabled</label>
+      <div class="toggle-switch">
+        <input type="checkbox" id="enableToggle" checked>
+        <span class="toggle-slider"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="popup-section">
+    <div class="popup-section-title">Display Mode</div>
+    <div class="radio-group">
+      <label class="radio-option">
+        <input type="radio" name="displayMode" value="badge" checked>
+        <span>Badge only (click to expand)</span>
+      </label>
+      <label class="radio-option">
+        <input type="radio" name="displayMode" value="badge-expand">
+        <span>Badge + auto-expand details</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="popup-section">
+    <div class="popup-section-title">Session Stats</div>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-value" id="statScanned">0</div>
+        <div class="stat-label">Posts scanned</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="statAvg">—</div>
+        <div class="stat-label">Avg score</div>
+      </div>
+      <div class="stat-box full-width">
+        <div class="score-bands">
+          <div class="band">
+            <span class="band-dot green"></span>
+            <span id="bandGreen">0</span> human
+          </div>
+          <div class="band">
+            <span class="band-dot amber"></span>
+            <span id="bandAmber">0</span> mixed
+          </div>
+          <div class="band">
+            <span class="band-dot red"></span>
+            <span id="bandRed">0</span> AI
+          </div>
+        </div>
+      </div>
+    </div>
+    <button class="reset-link" id="resetStats">Reset stats</button>
+  </div>
+
+  <div class="popup-section">
+    <div class="popup-section-title">Deep Scan (Phase 4)</div>
+    <input type="password" class="api-key-input" id="apiKey"
+           placeholder="sk-ant-... (Anthropic API key)" disabled>
+    <div class="api-key-note">Coming soon — BYOK Claude API for LLM-based verification.</div>
+  </div>
+
+  <div class="popup-footer">
+    Local-first, privacy-respecting AI detection.
+    <br>Pattern database based on <a href="https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing" target="_blank">Wikipedia's AI Writing Signs</a>.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
