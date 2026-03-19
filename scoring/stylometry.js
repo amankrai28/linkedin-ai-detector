@@ -11,9 +11,10 @@
  *   Superficial -ing phrases: 0–2 pts
  *   Burstiness (complexity variance): 0–8 pts
  *   Lexical diversity (TTR + transitions): 0–5 pts
+ *   Sentence starter repetition: 0–5 pts
  */
 
-const STYLOMETRY_MAX = 35;
+const STYLOMETRY_MAX = 38;
 
 // ─── HELPERS ───
 
@@ -299,6 +300,51 @@ function detectLexicalDiversity(text) {
   return { score: Math.min(score, 5), signals };
 }
 
+function detectSentenceStarterRepetition(text) {
+  const sentences = getSentences(text);
+  if (sentences.length < 5) return { score: 0, signals: [] };
+
+  // Extract first 2 words of each sentence (lowercased)
+  const starters = sentences.map(s => {
+    const words = getWords(s).slice(0, 2).map(w => w.toLowerCase());
+    return words.join(' ');
+  }).filter(s => s.length > 0);
+
+  if (starters.length < 5) return { score: 0, signals: [] };
+
+  // Count occurrences of each starter pattern
+  const counts = {};
+  for (const starter of starters) {
+    counts[starter] = (counts[starter] || 0) + 1;
+  }
+
+  // Find the most repeated starter
+  let maxCount = 0;
+  let maxStarter = '';
+  for (const [starter, count] of Object.entries(counts)) {
+    if (count > maxCount) {
+      maxCount = count;
+      maxStarter = starter;
+    }
+  }
+
+  const ratio = maxCount / starters.length;
+
+  if (ratio >= 0.3) {
+    return {
+      score: 5,
+      signals: [`Repetitive sentence starters: "${maxStarter}" starts ${maxCount}/${starters.length} sentences (${Math.round(ratio * 100)}%)`]
+    };
+  }
+  if (ratio >= 0.2) {
+    return {
+      score: 3,
+      signals: [`Moderate starter repetition: "${maxStarter}" starts ${maxCount}/${starters.length} sentences (${Math.round(ratio * 100)}%)`]
+    };
+  }
+  return { score: 0, signals: [] };
+}
+
 // ─── MAIN SCORER ───
 
 function scoreStylometry(text) {
@@ -310,7 +356,8 @@ function scoreStylometry(text) {
     detectPerfectGrammar(text),
     detectSuperficialIng(text),
     detectBurstiness(text),
-    detectLexicalDiversity(text)
+    detectLexicalDiversity(text),
+    detectSentenceStarterRepetition(text)
   ];
 
   const signals = [];
@@ -320,7 +367,7 @@ function scoreStylometry(text) {
   const names = [
     'sentenceLengthVariance', 'emDashDensity', 'paragraphUniformity',
     'hedgingDensity', 'perfectGrammar', 'superficialIng',
-    'burstiness', 'lexicalDiversity'
+    'burstiness', 'lexicalDiversity', 'sentenceStarterRepetition'
   ];
 
   results.forEach((r, i) => {
