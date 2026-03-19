@@ -7,9 +7,15 @@
 
 const SELECTORS = {
   postContainer: [
+    // Main feed selectors
     'div.feed-shared-update-v2',
-    'div[data-urn^="urn:li:activity"]',
     'div.feed-shared-update-v2[data-urn]',
+    // Profile activity page selectors
+    'div.profile-creator-shared-feed-update__container',
+    'div.profile-creator-shared-feed-update__mini-container',
+    // Activity URN-based selectors (works on both feed and profile pages)
+    'div[data-urn^="urn:li:activity"]',
+    'div[data-urn*="activity"]',
   ],
   postText: [
     'div.feed-shared-text',
@@ -26,13 +32,14 @@ const LOG_PREFIX = '[AI Detector]';
 // ─── DOM EXTRACTION ───
 
 function findPostContainers() {
-  const found = new Set();
+  const found = new Map(); // element -> matched selector (for debug logging)
+
   for (const selector of SELECTORS.postContainer) {
     try {
       const elements = document.querySelectorAll(selector);
       elements.forEach((el) => {
-        if (!el.hasAttribute(PROCESSED_ATTR)) {
-          found.add(el);
+        if (!el.hasAttribute(PROCESSED_ATTR) && !found.has(el)) {
+          found.set(el, selector);
         }
       });
     } catch (e) {
@@ -40,9 +47,9 @@ function findPostContainers() {
     }
   }
 
-  // Heuristic fallback: if primary selectors found nothing, look for
-  // div elements that contain both a profile/avatar area and a text block.
-  // This survives LinkedIn class name changes.
+  // Heuristic fallback: containers with both a text block and social
+  // action buttons (like/comment/repost). Works on profile activity
+  // pages where class names may differ from the main feed.
   if (found.size === 0) {
     console.warn(
       LOG_PREFIX,
@@ -53,16 +60,29 @@ function findPostContainers() {
         'div[data-urn], div[data-id]'
       );
       candidates.forEach((el) => {
-        if (el.hasAttribute(PROCESSED_ATTR)) return;
+        if (el.hasAttribute(PROCESSED_ATTR) || found.has(el)) return;
+
+        const hasText =
+          el.querySelector('span.break-words') ||
+          el.querySelector('div[dir="ltr"]');
+
+        const hasSocialActions =
+          el.querySelector('button[aria-label*="Like"]') ||
+          el.querySelector('button[aria-label*="like"]') ||
+          el.querySelector('button[aria-label*="Comment"]') ||
+          el.querySelector('button[aria-label*="Repost"]') ||
+          el.querySelector('.social-actions-button') ||
+          el.querySelector('.feed-shared-social-action-bar') ||
+          el.querySelector('.social-details-social-counts');
+
         const hasAvatar =
           el.querySelector('img.feed-shared-actor__avatar-image') ||
           el.querySelector('img[alt*="profile"]') ||
           el.querySelector('a[href*="/in/"] img');
-        const hasText =
-          el.querySelector('span.break-words') ||
-          el.querySelector('div[dir="ltr"]');
-        if (hasAvatar && hasText) {
-          found.add(el);
+
+        // Match if text + social actions, or text + avatar (original heuristic)
+        if (hasText && (hasSocialActions || hasAvatar)) {
+          found.set(el, 'heuristic-fallback (text + social/avatar)');
         }
       });
       if (found.size > 0) {
@@ -76,7 +96,13 @@ function findPostContainers() {
     }
   }
 
-  return Array.from(found);
+  // Log which selector matched each container for debugging
+  found.forEach((selector, el) => {
+    const urn = el.getAttribute('data-urn') || '(no urn)';
+    console.log(LOG_PREFIX, `Matched: "${selector}" — urn: ${urn}`);
+  });
+
+  return Array.from(found.keys());
 }
 
 function extractPostText(container) {
@@ -161,7 +187,15 @@ const observer = new MutationObserver((mutations) => {
 
 observer.observe(document.body, { childList: true, subtree: true });
 
+// Detect page type for debugging
+const pageType = location.pathname.includes('/feed')
+  ? 'feed'
+  : location.pathname.match(/\/in\/[^/]+\/recent-activity/)
+    ? 'profile-activity'
+    : location.pathname.match(/\/in\/[^/]+/)
+      ? 'profile'
+      : 'other';
+console.log(LOG_PREFIX, `Content script loaded — page type: ${pageType}, url: ${location.pathname}`);
+
 // Process posts already in the DOM
 processAllPosts();
-
-console.log(LOG_PREFIX, 'Content script loaded');
