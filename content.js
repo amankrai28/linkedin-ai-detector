@@ -245,11 +245,23 @@ async function processPost(container) {
   // Score the post text through the scoring engine
   let result = null;
   if (typeof scorePost === 'function') {
-    result = scorePost(text);
+    result = await scorePost(text);
     const preview = text.length > 60 ? text.substring(0, 57) + '...' : text;
+    const modeLabel = result.blendMode === 'full' ? 'ML + Heuristic' : 'Heuristic only';
+
+    // Primary log line
+    console.log(LOG_PREFIX, `"${preview}" (${result.wordCount}w): ${result.score}/100 [${modeLabel}]`);
+
+    // ML + Heuristic breakdown
+    if (result.mlAvailable) {
+      console.log(LOG_PREFIX, `  ML: ${result.mlScore}/100 (${result.mlLabel}, ${result.mlConfidence.toFixed(2)} confidence) | Heuristic: ${result.heuristicScore}/100 | Blended: ${result.score}/100`);
+    } else {
+      console.log(LOG_PREFIX, `  ML: not loaded | Heuristic: ${result.heuristicScore}/100`);
+    }
+
+    // Layer breakdown
     const convergence = result.convergenceBonus > 0 ? ` | Convergence: +${result.convergenceBonus}` : '';
     const l = result.layers;
-    console.log(LOG_PREFIX, `"${preview}" (${result.wordCount}w): ${result.score}/100`);
     console.log(LOG_PREFIX, `  Vocab: ${l.vocabulary.score}/${l.vocabulary.max} | Structure: ${l.structure.score}/${l.structure.max} | Style: ${l.stylometry.score}/${l.stylometry.max} | LinkedIn: ${l.linkedin.score}/${l.linkedin.max}${convergence}`);
     // Vocabulary sub-scores for debugging
     const vd = l.vocabulary.details;

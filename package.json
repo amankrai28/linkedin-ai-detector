@@ -1,0 +1,14 @@
+{
+  "name": "linkedin-ai-detector",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "scripts": {
+    "build": "esbuild offscreen.js --bundle --outfile=build/offscreen.js --format=iife"
+  }
+}

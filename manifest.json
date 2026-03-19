@@ -3,7 +3,7 @@
   "name": "LinkedIn AI Detector",
   "version": "1.0.0",
   "description": "Detect AI-generated LinkedIn posts with a research-backed scoring engine",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "offscreen"],
   "host_permissions": ["https://www.linkedin.com/*"],
   "background": {
     "service_worker": "background.js"
@@ -17,6 +17,7 @@
         "scoring/structure.js",
         "scoring/stylometry.js",
         "scoring/linkedin.js",
+        "scoring/ml-detector.js",
         "scoring/engine.js",
         "content.js",
         "ui/overlay.js"
