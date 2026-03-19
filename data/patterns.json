@@ -1,0 +1,370 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "source": "Wikipedia 'Signs of AI Writing' taxonomy + LinkedIn-specific patterns",
+    "totalCategories": 24
+  },
+  "vocabulary": {
+    "tier1": {
+      "label": "Dead giveaways",
+      "pointsEach": 3,
+      "cap": 15,
+      "words": [
+        "delve",
+        "tapestry",
+        "testament",
+        "landscape",
+        "pivotal",
+        "unwavering",
+        "paramount",
+        "foster",
+        "fostering",
+        "leverage",
+        "underscores",
+        "showcasing",
+        "encompassing",
+        "cultivating",
+        "intricate",
+        "intricacies",
+        "interplay",
+        "indelible mark",
+        "enduring"
+      ]
+    },
+    "tier2": {
+      "label": "Moderate signals",
+      "pointsEach": 1.5,
+      "cap": 12,
+      "phrases": [
+        "it's worth noting",
+        "it is worth noting",
+        "at the end of the day",
+        "here's the kicker",
+        "here is the kicker",
+        "let me be clear",
+        "in today's rapidly evolving",
+        "at its core",
+        "the reality is",
+        "here's the thing",
+        "here is the thing",
+        "let that sink in",
+        "game-changer",
+        "game changer",
+        "deep dive",
+        "unpack",
+        "double down",
+        "move the needle",
+        "lean into",
+        "circle back",
+        "it goes without saying",
+        "needless to say",
+        "when it comes to",
+        "in a world where",
+        "it is important to note",
+        "this is a reminder that"
+      ]
+    },
+    "tier3": {
+      "label": "Contextual signals",
+      "pointsEach": 0.5,
+      "clusterMultiplier": 2,
+      "clusterThreshold": 3,
+      "cap": 8,
+      "words": [
+        "additionally",
+        "align with",
+        "crucial",
+        "enhance",
+        "garner",
+        "highlight",
+        "key",
+        "robust",
+        "streamline",
+        "holistic",
+        "navigate",
+        "innovative",
+        "comprehensive",
+        "leverage",
+        "optimize",
+        "synergy",
+        "ecosystem",
+        "scalable",
+        "actionable",
+        "impactful",
+        "empower",
+        "elevate",
+        "resonate",
+        "curate",
+        "craft"
+      ]
+    },
+    "copulaAvoidance": {
+      "label": "Copula avoidance",
+      "pointsEach": 2,
+      "cap": 6,
+      "phrases": [
+        "serves as",
+        "stands as",
+        "marks a",
+        "represents a",
+        "boasts a",
+        "features a",
+        "offers a"
+      ]
+    },
+    "communicationArtifacts": {
+      "label": "Communication artifacts",
+      "pointsEach": 4,
+      "cap": 8,
+      "phrases": [
+        "I hope this helps",
+        "Great question!",
+        "Certainly!",
+        "Of course!",
+        "You're absolutely right",
+        "Would you like me to",
+        "Let me know if",
+        "Here is a",
+        "As of my last",
+        "based on available information"
+      ]
+    }
+  },
+  "structure": {
+    "broetry": {
+      "label": "Broetry format",
+      "maxPoints": 8,
+      "thresholds": {
+        "high": { "ratio": 0.6, "points": 8 },
+        "medium": { "ratio": 0.4, "points": 4 }
+      }
+    },
+    "hookStoreLessonCTA": {
+      "label": "Hook-Story-Lesson-CTA arc",
+      "maxPoints": 10,
+      "hook": {
+        "points": 2,
+        "description": "First sentence is question, exclamation, or strong claim"
+      },
+      "story": {
+        "points": 2,
+        "markers": ["I was", "I remember", "Last week", "Last month", "Last year", "Years ago", "A few years ago", "When I was", "One day", "Recently"]
+      },
+      "lesson": {
+        "points": 3,
+        "markers": ["here's what I learned", "here is what I learned", "the lesson", "key takeaway", "what this taught me", "the biggest lesson", "what I realized", "my takeaway"]
+      },
+      "cta": {
+        "points": 3,
+        "markers": ["agree?", "thoughts?", "what do you think?", "share if", "repost if", "tag someone", "let me know", "drop a comment", "comment below"]
+      }
+    },
+    "numberedWisdom": {
+      "label": "Numbered wisdom lists",
+      "maxPoints": 7
+    },
+    "formulaicEndings": {
+      "label": "Formulaic endings",
+      "maxPoints": 5,
+      "patterns": [
+        { "regex": "\\b(agree|thoughts)\\?\\s*$", "points": 3 },
+        { "regex": "what do you think\\?\\s*$", "points": 3 },
+        { "regex": "(repost|share) if (this resonated|you agree)", "points": 5 },
+        { "regex": "tag someone who needs this", "points": 5 },
+        { "regex": "follow me for more", "points": 4 },
+        { "regex": "follow for daily", "points": 4 }
+      ]
+    },
+    "negativeParallelisms": {
+      "label": "Negative parallelisms",
+      "maxPoints": 4,
+      "pointsEach": 2,
+      "patterns": ["not just", "not only", "it's not about.*it's about", "it is not about.*it is about"]
+    },
+    "ruleOfThree": {
+      "label": "Rule of three",
+      "maxPoints": 4
+    },
+    "falseRanges": {
+      "label": "False ranges",
+      "maxPoints": 3,
+      "regex": "from .+ to .+, from .+ to"
+    }
+  },
+  "stylometry": {
+    "sentenceLengthVariance": {
+      "label": "Sentence length variance",
+      "maxPoints": 8,
+      "minSentences": 4,
+      "thresholds": {
+        "low": { "cv": 0.3, "points": 8 },
+        "medium": { "cv": 0.5, "points": 4 }
+      }
+    },
+    "emDashDensity": {
+      "label": "Em dash density",
+      "maxPoints": 4,
+      "thresholds": {
+        "high": { "per100Words": 4, "points": 4 },
+        "medium": { "per100Words": 2, "points": 2 }
+      }
+    },
+    "paragraphUniformity": {
+      "label": "Paragraph length uniformity",
+      "maxPoints": 4,
+      "minParagraphs": 3,
+      "thresholds": {
+        "low": { "cv": 0.3, "points": 4 },
+        "medium": { "cv": 0.5, "points": 2 }
+      }
+    },
+    "hedgingDensity": {
+      "label": "Hedging density",
+      "maxPoints": 4,
+      "phrases": ["perhaps", "it could be argued", "potentially", "it might be said", "arguably", "it is possible", "one could argue", "it may be", "it seems", "it appears"],
+      "thresholds": {
+        "high": { "per100Words": 3, "points": 4 },
+        "medium": { "per100Words": 2, "points": 2 }
+      }
+    },
+    "perfectGrammar": {
+      "label": "Perfect grammar signal",
+      "maxPoints": 3,
+      "minWords": 100,
+      "contractions": ["don't", "can't", "won't", "I'm", "I've", "I'll", "I'd", "we're", "we've", "they're", "they've", "isn't", "aren't", "wasn't", "weren't", "hasn't", "haven't", "hadn't", "doesn't", "didn't", "couldn't", "wouldn't", "shouldn't", "it's", "that's", "there's", "here's", "what's", "who's", "let's"]
+    },
+    "superficialIng": {
+      "label": "Superficial -ing phrases",
+      "maxPoints": 2,
+      "words": ["highlighting", "underscoring", "emphasizing", "reflecting", "showcasing", "ensuring", "symbolizing", "contributing to", "cultivating", "fostering", "encompassing"]
+    }
+  },
+  "linkedin": {
+    "hashtagStuffing": {
+      "label": "Hashtag stuffing",
+      "maxPoints": 3,
+      "thresholds": {
+        "high": { "count": 5, "points": 3 },
+        "medium": { "count": 3, "points": 1 }
+      }
+    },
+    "emojiAsStructure": {
+      "label": "Emoji as structure",
+      "maxPoints": 4,
+      "thresholds": {
+        "high": { "count": 3, "points": 4 },
+        "medium": { "count": 1, "points": 2 }
+      }
+    },
+    "personalBrandFormula": {
+      "label": "Personal brand formula",
+      "maxPoints": 5,
+      "openingTriggers": ["I was rejected", "I was fired", "I was told no", "I failed", "I got rejected", "I lost my job", "I was laid off", "I dropped out"],
+      "reversalMarkers": ["but then", "fast forward", "today I", "now I", "that's when", "everything changed"],
+      "lessonMarkers": ["here's what I learned", "here is what I learned", "the lesson", "what this taught me"]
+    },
+    "scrollManipulation": {
+      "label": "Scroll manipulation",
+      "maxPoints": 3,
+      "ratioThreshold": 0.5
+    }
+  },
+  "categories": {
+    "1": {
+      "name": "Significance inflation",
+      "phrases": ["stands as", "serves as", "is a testament", "is a reminder", "a vital role", "a significant role", "a crucial role", "a pivotal role", "a key role", "a vital moment", "a significant moment", "a pivotal moment", "a key moment", "underscores its importance", "highlights its significance", "reflects broader", "symbolizing its ongoing", "symbolizing its enduring", "symbolizing its lasting", "contributing to the", "setting the stage for", "marking the", "shaping the", "represents a shift", "marks a shift", "key turning point", "evolving landscape", "focal point", "indelible mark", "deeply rooted"]
+    },
+    "2": {
+      "name": "Notability emphasis",
+      "phrases": ["independent coverage", "local media outlets", "regional media outlets", "national media outlets", "written by a leading expert", "active social media presence"]
+    },
+    "3": {
+      "name": "Superficial -ing analyses",
+      "words": ["highlighting", "underscoring", "emphasizing", "ensuring", "reflecting", "symbolizing", "contributing to", "cultivating", "fostering", "encompassing", "showcasing"]
+    },
+    "4": {
+      "name": "Promotional language",
+      "phrases": ["boasts a", "vibrant", "profound", "enhancing its", "showcasing", "exemplifies", "commitment to", "natural beauty", "nestled", "in the heart of", "renowned", "breathtaking", "must-visit", "stunning", "groundbreaking"]
+    },
+    "5": {
+      "name": "Vague attributions",
+      "phrases": ["industry reports", "observers have cited", "experts argue", "some critics argue", "several sources", "several publications"]
+    },
+    "6": {
+      "name": "Challenges and future prospects formula",
+      "phrases": ["despite its", "faces several challenges", "despite these challenges", "challenges and legacy", "future outlook"]
+    },
+    "7": {
+      "name": "AI vocabulary (high-frequency)",
+      "words": ["additionally", "align with", "crucial", "delve", "emphasizing", "enduring", "enhance", "fostering", "garner", "highlight", "interplay", "intricate", "intricacies", "key", "landscape", "pivotal", "showcase", "tapestry", "testament", "underscore", "valuable", "vibrant"]
+    },
+    "8": {
+      "name": "Copula avoidance",
+      "phrases": ["serves as", "stands as", "marks a", "represents a", "boasts a", "features a", "offers a"]
+    },
+    "9": {
+      "name": "Negative parallelisms",
+      "patterns": ["not only.*but", "it's not just about.*it's", "it is not just about.*it is"]
+    },
+    "10": {
+      "name": "Rule of three",
+      "description": "Forcing ideas into groups of exactly three"
+    },
+    "11": {
+      "name": "Synonym cycling",
+      "description": "Referring to the same entity by multiple different names to avoid repetition"
+    },
+    "12": {
+      "name": "False ranges",
+      "patterns": ["from .+ to .+, from .+ to"]
+    },
+    "13": {
+      "name": "Em dash overuse",
+      "description": "Using em dashes far more frequently than human writing norms"
+    },
+    "14": {
+      "name": "Boldface overuse",
+      "description": "Mechanically emphasizing phrases in bold"
+    },
+    "15": {
+      "name": "Inline-header vertical lists",
+      "description": "Bullet points starting with bold header followed by explanation"
+    },
+    "16": {
+      "name": "Title case in headings",
+      "description": "Capitalizing all main words in every heading"
+    },
+    "17": {
+      "name": "Emoji decoration",
+      "description": "Using emojis as bullet points or section markers"
+    },
+    "18": {
+      "name": "Curly quotation marks",
+      "description": "ChatGPT uses curly quotes vs straight quotes"
+    },
+    "19": {
+      "name": "Communication artifacts",
+      "phrases": ["I hope this helps", "Of course!", "Certainly!", "You're absolutely right!", "Would you like", "Let me know", "Here is a"]
+    },
+    "20": {
+      "name": "Knowledge-cutoff disclaimers",
+      "phrases": ["as of my last", "up to my last training update", "while specific details are limited", "while specific details are scarce", "based on available information"]
+    },
+    "21": {
+      "name": "Sycophantic tone",
+      "phrases": ["Great question!", "You're absolutely right!", "That's an excellent point"]
+    },
+    "22": {
+      "name": "Filler phrases",
+      "phrases": ["in order to", "due to the fact that", "at this point in time", "it is important to note that", "it is worth mentioning that"]
+    },
+    "23": {
+      "name": "Excessive hedging",
+      "phrases": ["could potentially", "it might be argued", "one could argue", "it is possible that", "it could be said"]
+    },
+    "24": {
+      "name": "Generic positive conclusions",
+      "phrases": ["the future looks bright", "exciting times lie ahead", "this represents a major step", "a step in the right direction", "paving the way for", "the possibilities are endless"]
+    }
+  }
+}

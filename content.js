@@ -110,9 +110,18 @@ function processPost(container) {
     container.style.position = 'relative';
   }
 
+  // Score the post text through the scoring engine
+  let result = null;
+  if (typeof scorePost === 'function') {
+    result = scorePost(text);
+    console.log(LOG_PREFIX, `Scored post (${result.wordCount} words): ${result.score}/100`, result.topSignals);
+  } else {
+    console.warn(LOG_PREFIX, 'scorePost not available — using random score');
+  }
+
   // Render badge (defined in ui/overlay.js)
   if (typeof renderScoreBadge === 'function') {
-    renderScoreBadge(container, text);
+    renderScoreBadge(container, text, result);
   } else {
     console.warn(LOG_PREFIX, 'renderScoreBadge not available');
   }

@@ -1,7 +1,7 @@
 /**
  * LinkedIn AI Detector — Badge Overlay
  * Renders a color-coded score badge on each LinkedIn post.
- * Phase 1: Uses random scores for testing. Will be replaced by the scoring engine in Phase 2.
+ * Uses real scores from the scoring engine.
  */
 
 function getScoreColor(score) {
@@ -19,21 +19,27 @@ function getScoreLabel(score) {
 /**
  * Renders a score badge in the top-right corner of a post container.
  * @param {HTMLElement} postContainer - The post's DOM element
- * @param {string} postText - The extracted post text (unused in Phase 1)
+ * @param {string} postText - The extracted post text
+ * @param {object|null} result - Scoring engine result, or null for fallback
  * @returns {number} The score that was rendered
  */
-function renderScoreBadge(postContainer, postText) {
+function renderScoreBadge(postContainer, postText, result) {
   // Guard against duplicate badges
   if (postContainer.querySelector('.laid-score-badge')) return -1;
 
-  // Phase 1: random score for testing (replaced by scoring engine in Phase 2)
-  const score = Math.floor(Math.random() * 101);
+  // Use real score from engine, or fallback to random if engine unavailable
+  const score = result ? result.score : Math.floor(Math.random() * 101);
 
   const badge = document.createElement('div');
   badge.className = `laid-score-badge ${getScoreColor(score)}`;
   badge.textContent = score;
   badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100 \u2014 ${getScoreLabel(score)}`);
   badge.setAttribute('data-score', score);
+
+  // Store full result for later use (click-to-expand in Phase 3)
+  if (result) {
+    badge._aiResult = result;
+  }
 
   postContainer.appendChild(badge);
 
