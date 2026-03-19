@@ -154,14 +154,19 @@ function sleep(ms) {
 async function processPost(container) {
   if (container.hasAttribute(PROCESSED_ATTR)) return;
 
-  // Mark early to prevent duplicate processing during async wait
+  // Check for text BEFORE marking as processed — LinkedIn may have added the
+  // container to the DOM but not yet populated it with text content.  If we
+  // mark it now, later retries will skip it and the post never gets scored.
+  const earlyText = extractPostText(container);
+  if (!earlyText) return;
+
+  // Mark as processed now that we know there's text to score
   container.setAttribute(PROCESSED_ATTR, 'true');
 
   // Expand truncated posts by clicking "see more"
   const seeMoreBtn = findSeeMoreButton(container);
   if (seeMoreBtn) {
-    const beforeText = extractPostText(container);
-    const beforeWords = beforeText ? beforeText.split(/\s+/).length : 0;
+    const beforeWords = earlyText.split(/\s+/).length;
     seeMoreBtn.click();
     await sleep(100);
     const afterText = extractPostText(container);
