@@ -338,7 +338,8 @@ setInterval(() => {
 
 // ─── INIT ───
 
-console.log(LOG_PREFIX, `Content script loaded — page type: ${detectPageType()}, url: ${location.href}`);
+const isIframe = window !== window.top;
+console.log(LOG_PREFIX, `Content script loaded — page type: ${detectPageType()}, url: ${location.href}${isIframe ? ' (iframe)' : ''}`);
 
 // Process posts already in the DOM
 processAllPosts();
