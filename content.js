@@ -120,15 +120,59 @@ function extractPostText(container) {
   return null;
 }
 
+// ─── SEE-MORE EXPANSION ───
+
+const SEE_MORE_SELECTORS = [
+  'button.feed-shared-inline-show-more-text',
+  'a.feed-shared-inline-show-more-text',
+  'button[class*="see-more"]',
+  'a[class*="see-more"]',
+];
+
+function findSeeMoreButton(container) {
+  for (const selector of SEE_MORE_SELECTORS) {
+    const btn = container.querySelector(selector);
+    if (btn) return btn;
+  }
+  // Fallback: any button/anchor whose visible text is "…more", "...more", or "see more"
+  const clickables = container.querySelectorAll('button, a');
+  for (const el of clickables) {
+    const txt = el.innerText.trim().toLowerCase();
+    if (txt === '…more' || txt === '...more' || txt === 'see more') {
+      return el;
+    }
+  }
+  return null;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // ─── PROCESSING ───
 
-function processPost(container) {
+async function processPost(container) {
   if (container.hasAttribute(PROCESSED_ATTR)) return;
+
+  // Mark early to prevent duplicate processing during async wait
+  container.setAttribute(PROCESSED_ATTR, 'true');
+
+  // Expand truncated posts by clicking "see more"
+  const seeMoreBtn = findSeeMoreButton(container);
+  if (seeMoreBtn) {
+    const beforeText = extractPostText(container);
+    const beforeWords = beforeText ? beforeText.split(/\s+/).length : 0;
+    seeMoreBtn.click();
+    await sleep(100);
+    const afterText = extractPostText(container);
+    const afterWords = afterText ? afterText.split(/\s+/).length : 0;
+    if (afterWords > beforeWords) {
+      console.log(LOG_PREFIX, `Expanded truncated post (was ~${beforeWords} words, now ${afterWords} words)`);
+    }
+  }
 
   const text = extractPostText(container);
   if (!text) return;
-
-  container.setAttribute(PROCESSED_ATTR, 'true');
 
   // Ensure the container can anchor absolutely-positioned children
   const position = getComputedStyle(container).position;
@@ -141,9 +185,13 @@ function processPost(container) {
   if (typeof scorePost === 'function') {
     result = scorePost(text);
     const preview = text.length > 60 ? text.substring(0, 57) + '...' : text;
-    console.log(LOG_PREFIX, `Scored post "${preview}" (${result.wordCount} words): ${result.score}/100`, result.topSignals);
+    const convergence = result.convergenceBonus > 0 ? ` | Convergence: +${result.convergenceBonus}` : '';
     const l = result.layers;
-    console.log(LOG_PREFIX, `  Vocab: ${l.vocabulary.score}/${l.vocabulary.max} | Structure: ${l.structure.score}/${l.structure.max} | Stylometry: ${l.stylometry.score}/${l.stylometry.max} | LinkedIn: ${l.linkedin.score}/${l.linkedin.max}`);
+    console.log(LOG_PREFIX, `"${preview}" (${result.wordCount}w): ${result.score}/100`);
+    console.log(LOG_PREFIX, `  Vocab: ${l.vocabulary.score}/${l.vocabulary.max} | Structure: ${l.structure.score}/${l.structure.max} | Style: ${l.stylometry.score}/${l.stylometry.max} | LinkedIn: ${l.linkedin.score}/${l.linkedin.max}${convergence}`);
+    // Vocabulary sub-scores for debugging
+    const vd = l.vocabulary.details;
+    console.log(LOG_PREFIX, `  Vocab detail — T1: ${vd.tier1.raw} | T2: ${vd.tier2.raw} | T3: ${vd.tier3.raw}${vd.tier3.clusterApplied ? ' (2x)' : ''} | Copula: ${vd.copula.raw} | Artifacts: ${vd.artifacts.raw}`);
   } else {
     console.warn(LOG_PREFIX, 'scorePost not available — using random score');
   }
@@ -156,12 +204,14 @@ function processPost(container) {
   }
 }
 
-function processAllPosts() {
+async function processAllPosts() {
   const posts = findPostContainers();
   if (posts.length > 0) {
     console.log(LOG_PREFIX, `Found ${posts.length} new post(s)`);
   }
-  posts.forEach(processPost);
+  for (const post of posts) {
+    await processPost(post);
+  }
 }
 
 // ─── UTILITIES ───

@@ -2,7 +2,7 @@
  * LinkedIn AI Detector — Scoring Engine (Orchestrator)
  *
  * Calls all 4 scoring layers, sums raw scores, applies post-length
- * normalization, and returns the final result.
+ * normalization and convergence bonus, returns the final result.
  *
  * Layer contributions:
  *   Vocabulary:  max 30 pts (scoreVocabulary)
@@ -12,10 +12,12 @@
  *   Raw total:   max 100 pts
  *
  * Normalization:
- *   < 50 words:    raw × 1.5 (fewer signals = each matters more)
- *   50–200 words:  raw × 1.0
- *   > 200 words:   raw × 0.85 (more words = more false positives)
- *   Final capped at 100
+ *   < 50 words:  raw × 1.5 (fewer signals = each matters more)
+ *   50+ words:   raw × 1.0
+ *
+ * Convergence bonus:
+ *   4+ categories firing: +8 pts
+ *   5+ categories firing: +12 pts
  */
 
 function scorePost(text) {
@@ -44,16 +46,42 @@ function scorePost(text) {
 
   const rawTotal = vocabulary.score + structure.score + stylometry.score + linkedin.score;
 
-  // Post-length normalization
+  // Post-length normalization (no penalty for long posts)
   let multiplier = 1;
   if (wordCount < 50) {
     multiplier = 1.5;
-  } else if (wordCount > 200) {
-    multiplier = 0.85;
   }
 
   const normalized = Math.round(rawTotal * multiplier);
-  const finalScore = Math.min(normalized, 100);
+
+  // Convergence bonus: multiple independent detection categories firing
+  // together is strong evidence of AI generation
+  const firingCategories = [
+    vocabulary.score > 0,
+    structure.score > 0,
+    stylometry.score > 0,
+    linkedin.score > 0,
+    // Count sub-categories within layers as separate categories
+    vocabulary.details.tier1.raw > 0,
+    vocabulary.details.tier2.raw > 0,
+    vocabulary.details.tier3.raw > 0,
+    structure.details.broetry > 0,
+    structure.details.hookStoryLessonCTA > 0,
+    structure.details.negativeParallelisms > 0,
+    structure.details.ruleOfThree > 0,
+    stylometry.details.sentenceLengthVariance > 0,
+    linkedin.details.scrollManipulation > 0,
+    linkedin.details.emojiAsStructure > 0
+  ].filter(Boolean).length;
+
+  let convergenceBonus = 0;
+  if (firingCategories >= 5) {
+    convergenceBonus = 12;
+  } else if (firingCategories >= 4) {
+    convergenceBonus = 8;
+  }
+
+  const finalScore = Math.min(normalized + convergenceBonus, 100);
 
   // Collect top signals across all layers (up to 6)
   const allSignals = [
@@ -62,6 +90,9 @@ function scorePost(text) {
     ...stylometry.signals,
     ...linkedin.signals
   ];
+  if (convergenceBonus > 0) {
+    allSignals.push(`Convergence bonus: ${firingCategories} categories firing (+${convergenceBonus})`);
+  }
   const topSignals = allSignals.slice(0, 6);
 
   return {
@@ -75,6 +106,8 @@ function scorePost(text) {
     topSignals,
     wordCount,
     rawTotal,
-    normalizationMultiplier: multiplier
+    normalizationMultiplier: multiplier,
+    convergenceBonus,
+    firingCategories
   };
 }

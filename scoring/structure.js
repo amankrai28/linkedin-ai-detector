@@ -52,7 +52,7 @@ function detectBroetry(text) {
   }
   if (ratio >= 0.4) {
     return {
-      score: 4,
+      score: 6,
       signals: [`Mild broetry: ${Math.round(ratio * 100)}% single-sentence paragraphs`]
     };
   }
@@ -174,7 +174,7 @@ function detectNegativeParallelisms(text) {
   }
 
   if (count > 0) {
-    const score = Math.min(count * 2, 4);
+    const score = Math.min(count * 4, 8);
     signals.push(`${count} negative parallelism(s) detected`);
     return { score, signals };
   }
@@ -188,7 +188,10 @@ function detectRuleOfThree(text) {
   const matches = text.match(threeItemList);
   const count = matches ? matches.length : 0;
 
-  if (count >= 2) {
+  if (count >= 3) {
+    return { score: 7, signals: [`Rule of three: ${count} triple-item lists found`] };
+  }
+  if (count === 2) {
     return { score: 4, signals: [`Rule of three: ${count} triple-item lists found`] };
   }
   if (count === 1) {
@@ -232,6 +235,19 @@ function scoreStructure(text) {
     signals.push(...r.signals);
     details[names[i]] = r.score;
   });
+
+  // Story + Lesson + CTA combo bonus: if all three detected together, add 3 pts
+  const hslResult = results[1]; // hookStoryLessonCTA
+  const hasStory = hslResult.signals.some(s => s.includes('Story element'));
+  const hasLesson = hslResult.signals.some(s => s.includes('Lesson element'));
+  const hasCTA = hslResult.signals.some(s => s.includes('CTA detected'));
+  if (hasStory && hasLesson && hasCTA) {
+    rawTotal += 3;
+    signals.push('Story + Lesson + CTA combo bonus (+3)');
+    details.comboBonus = 3;
+  } else {
+    details.comboBonus = 0;
+  }
 
   const score = Math.min(rawTotal, STRUCTURE_MAX);
   return { score, signals, details };

@@ -104,10 +104,18 @@ function detectScrollManipulation(text) {
   const blankRatio = blankLines.length / contentLines.length;
   const singleWordRatio = singleWordLines.length / contentLines.length;
 
-  if (blankRatio > 0.5 || singleWordRatio > 0.3) {
+  // 10+ blank lines is definitive scroll manipulation
+  if (blankLines.length >= 10 || blankRatio > 0.5 || singleWordRatio > 0.3) {
     return {
       score: 3,
       signals: [`Scroll manipulation: ${blankLines.length} blank lines, ${singleWordLines.length} single-word lines`]
+    };
+  }
+  // Moderate: 5+ blank lines
+  if (blankLines.length >= 5) {
+    return {
+      score: 2,
+      signals: [`Mild scroll manipulation: ${blankLines.length} blank lines`]
     };
   }
   return { score: 0, signals: [] };
