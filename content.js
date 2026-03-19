@@ -140,7 +140,10 @@ function processPost(container) {
   let result = null;
   if (typeof scorePost === 'function') {
     result = scorePost(text);
-    console.log(LOG_PREFIX, `Scored post (${result.wordCount} words): ${result.score}/100`, result.topSignals);
+    const preview = text.length > 60 ? text.substring(0, 57) + '...' : text;
+    console.log(LOG_PREFIX, `Scored post "${preview}" (${result.wordCount} words): ${result.score}/100`, result.topSignals);
+    const l = result.layers;
+    console.log(LOG_PREFIX, `  Vocab: ${l.vocabulary.score}/${l.vocabulary.max} | Structure: ${l.structure.score}/${l.structure.max} | Stylometry: ${l.stylometry.score}/${l.stylometry.max} | LinkedIn: ${l.linkedin.score}/${l.linkedin.max}`);
   } else {
     console.warn(LOG_PREFIX, 'scorePost not available — using random score');
   }
