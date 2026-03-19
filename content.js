@@ -256,10 +256,15 @@ function detectPageType() {
 function onNavigationDetected(newUrl) {
   console.log(LOG_PREFIX, `Navigation detected: ${newUrl}`);
   console.log(LOG_PREFIX, `Page type: ${detectPageType()}`);
-  // Wait for LinkedIn to render the new page content, then re-scan
-  setTimeout(() => {
-    processAllPosts();
-  }, 500);
+
+  // LinkedIn takes variable time to render new content after SPA navigation.
+  // Retry several times over 3 seconds to catch posts as they appear.
+  const retryDelays = [300, 700, 1200, 2000, 3000];
+  retryDelays.forEach(delay => {
+    setTimeout(() => {
+      processAllPosts();
+    }, delay);
+  });
 }
 
 // 1. popstate — browser back/forward buttons
