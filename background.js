@@ -88,6 +88,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
 
+  if (msg.type === 'ML_MODEL_STATUS') {
+    // Relay model loading status from offscreen document to content scripts
+    chrome.tabs.query({ url: 'https://www.linkedin.com/*' }, (tabs) => {
+      for (const tab of tabs) {
+        chrome.tabs.sendMessage(tab.id, msg).catch(() => {});
+      }
+    });
+    return false;
+  }
+
   if (msg.type === 'POST_SCORED') {
     // Content script reports a scored post
     chrome.storage.session.get('stats', (data) => {

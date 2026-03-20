@@ -67,6 +67,13 @@ try {
         document.querySelectorAll('.laid-score-badge').forEach(b => b.style.display = '');
       }
     }
+    if (msg.type === 'ML_MODEL_STATUS') {
+      const s = msg.status;
+      if (s === 'loading') console.log(LOG_PREFIX, `ML model loading${msg.attempt > 0 ? ` (retry ${msg.attempt})` : ''}...`);
+      else if (s === 'ready') console.log(LOG_PREFIX, `ML model ready (${msg.elapsed}ms)`);
+      else if (s === 'retrying') console.warn(LOG_PREFIX, `ML model load failed: ${msg.error} — retrying in ${msg.nextRetryMs / 1000}s`);
+      else if (s === 'failed') console.error(LOG_PREFIX, `ML model failed to load after all retries: ${msg.error}`);
+    }
     if (msg.type === 'ML_MODEL_READY') {
       console.log(LOG_PREFIX, 'ML model now ready — re-scoring posts');
       // Clear processed state so posts get re-scored with ML
