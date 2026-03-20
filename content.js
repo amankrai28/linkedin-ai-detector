@@ -67,6 +67,17 @@ try {
         document.querySelectorAll('.laid-score-badge').forEach(b => b.style.display = '');
       }
     }
+    if (msg.type === 'ML_MODEL_READY') {
+      console.log(LOG_PREFIX, 'ML model now ready — re-scoring posts');
+      // Clear processed state so posts get re-scored with ML
+      document.querySelectorAll(`[${PROCESSED_ATTR}]`).forEach(el => {
+        el.removeAttribute(PROCESSED_ATTR);
+        // Remove existing badges so they get re-rendered
+        const badge = el.querySelector('.laid-score-badge');
+        if (badge) badge.remove();
+      });
+      processAllPosts();
+    }
   });
 } catch (e) {
   // Extension context may be invalidated

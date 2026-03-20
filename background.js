@@ -78,6 +78,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async
   }
 
+  if (msg.type === 'ML_MODEL_READY') {
+    console.log('[AI Detector] ML model ready — notifying content scripts');
+    chrome.tabs.query({ url: 'https://www.linkedin.com/*' }, (tabs) => {
+      for (const tab of tabs) {
+        chrome.tabs.sendMessage(tab.id, { type: 'ML_MODEL_READY' }).catch(() => {});
+      }
+    });
+    return false;
+  }
+
   if (msg.type === 'POST_SCORED') {
     // Content script reports a scored post
     chrome.storage.session.get('stats', (data) => {

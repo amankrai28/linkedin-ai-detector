@@ -6,11 +6,13 @@
 
 import { pipeline, env } from '@huggingface/transformers';
 
-// Point ONNX Runtime to the extension's bundled WASM file
-env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('build/');
-// Use single-threaded WASM to avoid SharedArrayBuffer requirement
-env.backends.onnx.wasm.numThreads = 1;
-// Disable local model check and filesystem caching (not available in extension)
+// Configure ONNX Runtime for Chrome extension context
+try {
+  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('build/');
+  env.backends.onnx.wasm.numThreads = 1;
+} catch (e) {
+  console.warn('[AI Detector ML] Could not configure ONNX wasm env:', e.message);
+}
 env.allowLocalModels = false;
 env.useFSCache = false;
 
@@ -18,20 +20,31 @@ let classifier = null;
 let modelLoading = false;
 let modelReady = false;
 
+const LOAD_TIMEOUT = 60_000; // 60 seconds
+
 async function loadModel() {
   if (modelLoading || modelReady) return;
   modelLoading = true;
 
+  console.log('[AI Detector ML] Loading model...');
   const startTime = performance.now();
   try {
-    classifier = await pipeline(
-      'text-classification',
-      'onnx-community/roberta-base-openai-detector-ONNX',
-      { dtype: 'q8' }
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Model load timed out after 60s')), LOAD_TIMEOUT)
     );
+    classifier = await Promise.race([
+      pipeline(
+        'text-classification',
+        'onnx-community/roberta-base-openai-detector-ONNX',
+        { dtype: 'q8' }
+      ),
+      timeout
+    ]);
     modelReady = true;
     const elapsed = Math.round(performance.now() - startTime);
     console.log(`[AI Detector ML] Model loaded (${elapsed}ms)`);
+    // Notify background so content scripts can re-score posts
+    chrome.runtime.sendMessage({ type: 'ML_MODEL_READY' }).catch(() => {});
   } catch (err) {
     console.error('[AI Detector ML] Failed to load model:', err);
     modelLoading = false;
