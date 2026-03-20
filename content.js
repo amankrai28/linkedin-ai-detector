@@ -258,7 +258,7 @@ async function processPost(container) {
   if (typeof scorePost === 'function') {
     result = await scorePost(text);
     const preview = text.length > 60 ? text.substring(0, 57) + '...' : text;
-    const modeLabel = result.blendMode === 'full' ? 'ML + Heuristic' : 'Heuristic only';
+    const modeLabel = result.blendMode === 'noisy-or' ? 'ML + Heuristic (Noisy-OR)' : 'Heuristic only';
 
     // Primary log line
     console.log(LOG_PREFIX, `"${preview}" (${result.wordCount}w): ${result.score}/100 [${modeLabel}]`);

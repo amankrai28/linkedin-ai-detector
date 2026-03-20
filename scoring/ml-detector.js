@@ -6,41 +6,32 @@
 
 // eslint-disable-next-line no-unused-vars
 async function mlScore(text) {
-  const MAX_RETRIES = 3;
-  const BASE_DELAY = 2000;
+  // Single attempt — no retries. When the ML model finishes loading,
+  // the ML_MODEL_READY message triggers a full re-score of all posts
+  // (see content.js), so retrying here would just block the UI.
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'ML_SCORE_REQUEST',
+      text: text
+    });
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'ML_SCORE_REQUEST',
-        text: text
-      });
+    if (response && response.success) {
+      // Model returns { label: 'Real'|'Fake', score: 0-1 }
+      // Map to our 0-100 scale: 'Fake' with high confidence = high AI score
+      const aiScore = response.label === 'Fake'
+        ? Math.round(response.confidence * 100)
+        : Math.round((1 - response.confidence) * 100);
 
-      if (response && response.success) {
-        // Model returns { label: 'Real'|'Fake', score: 0-1 }
-        // Map to our 0-100 scale: 'Fake' with high confidence = high AI score
-        const aiScore = response.label === 'Fake'
-          ? Math.round(response.confidence * 100)
-          : Math.round((1 - response.confidence) * 100);
-
-        return {
-          score: aiScore,
-          confidence: response.confidence,
-          label: response.label,
-          available: true
-        };
-      }
-
-      // If model not ready, retry after delay (exponential backoff)
-      if (response?.error === 'Model not ready' && attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, BASE_DELAY * Math.pow(2, attempt)));
-        continue;
-      }
-
-      return { score: 0, available: false };
-    } catch (e) {
-      return { score: 0, available: false };
+      return {
+        score: aiScore,
+        confidence: response.confidence,
+        label: response.label,
+        available: true
+      };
     }
+
+    return { score: 0, available: false };
+  } catch (e) {
+    return { score: 0, available: false };
   }
-  return { score: 0, available: false };
 }
