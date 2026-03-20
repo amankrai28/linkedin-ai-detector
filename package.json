@@ -9,6 +9,6 @@
     "esbuild": "^0.24.0"
   },
   "scripts": {
-    "build": "esbuild offscreen.js --bundle --outfile=build/offscreen.js --format=iife"
+    "build": "esbuild offscreen.js --bundle --outfile=build/offscreen.js --format=esm && cp node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm build/"
   }
 }
