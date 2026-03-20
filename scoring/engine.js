@@ -157,6 +157,11 @@ function scorePostHeuristic(text) {
  * @returns {Promise<object>} Scoring result with blended score
  */
 async function scorePost(text) {
+  // Normalize Unicode: converts mathematical bold/italic (common in LinkedIn
+  // formatting) to standard ASCII so both the ML tokenizer and heuristic
+  // patterns can match them.
+  text = text.normalize('NFKC');
+
   // Run heuristic engine (synchronous, instant)
   const heuristicResult = scorePostHeuristic(text);
 
