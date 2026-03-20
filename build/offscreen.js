@@ -47955,26 +47955,40 @@ var __webpack_exports__zeros = __webpack_exports__.zeros;
 var __webpack_exports__zeros_like = __webpack_exports__.zeros_like;
 
 // offscreen.js
-__webpack_exports__env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("build/");
-__webpack_exports__env.backends.onnx.wasm.numThreads = 1;
+try {
+  __webpack_exports__env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("build/");
+  __webpack_exports__env.backends.onnx.wasm.numThreads = 1;
+} catch (e) {
+  console.warn("[AI Detector ML] Could not configure ONNX wasm env:", e.message);
+}
 __webpack_exports__env.allowLocalModels = false;
 __webpack_exports__env.useFSCache = false;
 var classifier = null;
 var modelLoading = false;
 var modelReady = false;
+var LOAD_TIMEOUT = 6e4;
 async function loadModel() {
   if (modelLoading || modelReady) return;
   modelLoading = true;
+  console.log("[AI Detector ML] Loading model...");
   const startTime = performance.now();
   try {
-    classifier = await __webpack_exports__pipeline(
-      "text-classification",
-      "onnx-community/roberta-base-openai-detector-ONNX",
-      { dtype: "q8" }
+    const timeout = new Promise(
+      (_, reject) => setTimeout(() => reject(new Error("Model load timed out after 60s")), LOAD_TIMEOUT)
     );
+    classifier = await Promise.race([
+      __webpack_exports__pipeline(
+        "text-classification",
+        "onnx-community/roberta-base-openai-detector-ONNX",
+        { dtype: "q8" }
+      ),
+      timeout
+    ]);
     modelReady = true;
     const elapsed = Math.round(performance.now() - startTime);
     console.log(`[AI Detector ML] Model loaded (${elapsed}ms)`);
+    chrome.runtime.sendMessage({ type: "ML_MODEL_READY" }).catch(() => {
+    });
   } catch (err) {
     console.error("[AI Detector ML] Failed to load model:", err);
     modelLoading = false;
