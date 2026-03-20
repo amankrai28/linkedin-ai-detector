@@ -123,6 +123,31 @@ function dismissBreakdownCard() {
 }
 
 /**
+ * Updates an existing score badge with new results (e.g., after ML scoring completes).
+ * @param {HTMLElement} postContainer - The post's DOM element
+ * @param {object} result - Updated scoring engine result
+ */
+// eslint-disable-next-line no-unused-vars
+function updateScoreBadge(postContainer, result) {
+  const badge = postContainer.querySelector('.laid-score-badge');
+  if (!badge) return;
+
+  const score = result.score;
+  badge.textContent = score;
+  badge.className = `laid-score-badge ${getScoreColor(score)}`;
+  badge.setAttribute('data-score', score);
+
+  let tooltipSuffix = '';
+  if (result.partial) {
+    tooltipSuffix = ' (limited text)';
+  } else if (result.blendMode === 'noisy-or') {
+    tooltipSuffix = ' (ML + heuristic)';
+  }
+  badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100${tooltipSuffix} — ${getScoreLabel(score)}`);
+  badge._aiResult = result;
+}
+
+/**
  * Renders a score badge in the top-right corner of a post container.
  * @param {HTMLElement} postContainer - The post's DOM element
  * @param {string} postText - The extracted post text

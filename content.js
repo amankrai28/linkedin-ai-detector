@@ -260,47 +260,59 @@ async function processPost(container) {
     container.style.position = 'relative';
   }
 
-  // Score the post text through the scoring engine
-  let result = null;
-  if (typeof scorePost === 'function') {
-    result = await scorePost(text);
-    const preview = text.length > 60 ? text.substring(0, 57) + '...' : text;
-    const modeLabel = result.blendMode === 'noisy-or' ? 'ML + Heuristic (Noisy-OR)' : 'Heuristic only';
+  const normalizedText = text.normalize('NFKC');
+  const preview = text.length > 60 ? text.substring(0, 57) + '...' : text;
 
-    // Primary log line
-    console.log(LOG_PREFIX, `"${preview}" (${result.wordCount}w): ${result.score}/100 [${modeLabel}]`);
+  // ── Phase 1: Instant heuristic scoring + badge ──
+  const heuristicResult = typeof scorePostSync === 'function'
+    ? scorePostSync(normalizedText)
+    : null;
 
-    // ML + Heuristic breakdown
-    if (result.mlAvailable) {
-      console.log(LOG_PREFIX, `  ML: ${result.mlScore}/100 (${result.mlLabel}, ${result.mlConfidence.toFixed(2)} confidence) | Heuristic: ${result.heuristicScore}/100 | Blended: ${result.score}/100`);
-    } else {
-      console.log(LOG_PREFIX, `  ML: not loaded | Heuristic: ${result.heuristicScore}/100`);
-    }
+  if (heuristicResult) {
+    const heuristicDisplay = {
+      ...heuristicResult,
+      mlScore: null, mlConfidence: null, mlLabel: null,
+      heuristicScore: heuristicResult.score,
+      mlAvailable: false, blendMode: 'heuristic-only'
+    };
 
-    // Layer breakdown
-    const convergence = result.convergenceBonus > 0 ? ` | Convergence: +${result.convergenceBonus}` : '';
-    const l = result.layers;
+    // Log heuristic results
+    console.log(LOG_PREFIX, `"${preview}" (${heuristicResult.wordCount}w): ${heuristicResult.score}/100 [Heuristic]`);
+    const convergence = heuristicResult.convergenceBonus > 0 ? ` | Convergence: +${heuristicResult.convergenceBonus}` : '';
+    const l = heuristicResult.layers;
     console.log(LOG_PREFIX, `  Vocab: ${l.vocabulary.score}/${l.vocabulary.max} | Structure: ${l.structure.score}/${l.structure.max} | Style: ${l.stylometry.score}/${l.stylometry.max} | LinkedIn: ${l.linkedin.score}/${l.linkedin.max}${convergence}`);
-    // Vocabulary sub-scores for debugging
-    const vd = l.vocabulary.details;
-    console.log(LOG_PREFIX, `  Vocab detail — T1: ${vd.tier1.raw} | T2: ${vd.tier2.raw} | T3: ${vd.tier3.raw}${vd.tier3.clusterApplied ? ' (2x)' : ''} | Copula: ${vd.copula.raw} | Artifacts: ${vd.artifacts.raw}`);
-  } else {
-    console.warn(LOG_PREFIX, 'scorePost not available — using random score');
-  }
 
-  // Render badge (defined in ui/overlay.js)
-  if (typeof renderScoreBadge === 'function') {
-    const score = renderScoreBadge(container, text, result);
-    // Report to background for session stats
-    if (score >= 0 && result) {
+    // Render badge immediately with heuristic score
+    if (typeof renderScoreBadge === 'function') {
+      renderScoreBadge(container, text, heuristicDisplay);
       try {
-        chrome.runtime.sendMessage({ type: 'POST_SCORED', score: result.score });
-      } catch (e) {
-        // Extension context may be invalidated
-      }
+        chrome.runtime.sendMessage({ type: 'POST_SCORED', score: heuristicResult.score });
+      } catch (e) { /* extension context may be invalidated */ }
+    }
+
+    // ── Phase 2: Async ML update (non-blocking) ──
+    if (typeof scorePostWithML === 'function') {
+      scorePostWithML(normalizedText, heuristicResult).then(fullResult => {
+        if (fullResult.mlAvailable) {
+          console.log(LOG_PREFIX, `"${preview}": ML update → ${fullResult.score}/100 [ML + Heuristic (Noisy-OR)]`);
+          console.log(LOG_PREFIX, `  ML: ${fullResult.mlScore}/100 (${fullResult.mlLabel}, ${fullResult.mlConfidence.toFixed(2)} confidence) | Heuristic: ${fullResult.heuristicScore}/100 | Blended: ${fullResult.score}/100`);
+
+          if (typeof updateScoreBadge === 'function') {
+            updateScoreBadge(container, fullResult);
+          }
+          try {
+            chrome.runtime.sendMessage({ type: 'POST_SCORED', score: fullResult.score });
+          } catch (e) { /* extension context may be invalidated */ }
+        }
+      }).catch(err => {
+        console.warn(LOG_PREFIX, 'ML scoring failed:', err);
+      });
     }
   } else {
-    console.warn(LOG_PREFIX, 'renderScoreBadge not available');
+    console.warn(LOG_PREFIX, 'scorePostSync not available — using random score');
+    if (typeof renderScoreBadge === 'function') {
+      renderScoreBadge(container, text, null);
+    }
   }
 }
 
@@ -309,9 +321,9 @@ async function processAllPosts() {
   if (posts.length > 0) {
     console.log(LOG_PREFIX, `Found ${posts.length} new post(s)`);
   }
-  for (const post of posts) {
-    await processPost(post);
-  }
+  // Process all posts in parallel — each one renders its heuristic badge
+  // immediately, ML updates trickle in as they complete.
+  await Promise.all(posts.map(post => processPost(post)));
 }
 
 // ─── UTILITIES ───

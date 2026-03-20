@@ -47996,7 +47996,7 @@ ${fake_token_around_image}${global_img_token}` + image_token.repeat(image_seq_le
       classifier = await Promise.race([
         __webpack_exports__pipeline(
           "text-classification",
-          "onnx-community/roberta-base-openai-detector-ONNX",
+          "onnx-community/chatgpt-detector-roberta-ONNX",
           { dtype: "q8" }
         ),
         timeout
