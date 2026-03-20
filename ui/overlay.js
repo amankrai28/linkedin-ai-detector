@@ -102,6 +102,12 @@ function createBreakdownCard(result) {
   const parts = [`${result.wordCount} words`];
   if (result.partial) parts.push('limited text');
   if (result.convergenceBonus > 0) parts.push(`+${result.convergenceBonus} convergence`);
+  if (result.mlAvailable) {
+    parts.push(`ML: ${result.mlScore}/100`);
+    parts.push(`Heuristic: ${result.heuristicScore}/100`);
+  } else if (result.blendMode === 'heuristic-only') {
+    parts.push('ML model loading...');
+  }
   footer.textContent = parts.join(' · ');
   card.appendChild(footer);
 
@@ -133,8 +139,15 @@ function renderScoreBadge(postContainer, postText, result) {
   const badge = document.createElement('div');
   badge.className = `laid-score-badge ${getScoreColor(score)}`;
   badge.textContent = score;
-  const partialSuffix = (result && result.partial) ? ' (limited text)' : '';
-  badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100${partialSuffix} — ${getScoreLabel(score)}`);
+  let tooltipSuffix = '';
+  if (result && result.partial) {
+    tooltipSuffix = ' (limited text)';
+  } else if (result && result.blendMode === 'heuristic-only') {
+    tooltipSuffix = ' (loading ML model...)';
+  } else if (result && result.blendMode === 'full') {
+    tooltipSuffix = ' (ML + heuristic)';
+  }
+  badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100${tooltipSuffix} — ${getScoreLabel(score)}`);
   badge.setAttribute('data-score', score);
 
   // Store full result for breakdown card

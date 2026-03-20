@@ -1,10 +1,12 @@
 /**
  * LinkedIn AI Detector — Scoring Engine (Orchestrator)
  *
- * Calls all 4 scoring layers, sums raw scores, applies post-length
- * normalization and convergence bonus, returns the final result.
+ * Blends ML model scores (primary, 70% weight) with heuristic scores
+ * (secondary, 30% weight) for final AI detection scoring.
  *
- * Layer contributions:
+ * Falls back to heuristic-only scoring when the ML model is not yet loaded.
+ *
+ * Heuristic layer contributions:
  *   Vocabulary:  max 30 pts (scoreVocabulary)
  *   Structure:   max 30 pts (scoreStructure)
  *   Stylometry:  max 38 pts (scoreStylometry)
@@ -25,7 +27,11 @@
  *   5+ categories firing: +15 pts
  */
 
-function scorePost(text) {
+/**
+ * Runs the heuristic scoring engine (synchronous).
+ * This is the original scorePost logic, preserved as-is.
+ */
+function scorePostHeuristic(text) {
   if (!text || text.trim().length === 0) {
     return {
       score: 0,
@@ -137,5 +143,62 @@ function scorePost(text) {
     convergenceBonus,
     firingCategories,
     partial
+  };
+}
+
+/**
+ * Main scoring function — blends ML model (70%) with heuristic engine (30%).
+ * Falls back to heuristic-only when ML model is unavailable.
+ *
+ * @param {string} text - The post text to score
+ * @returns {Promise<object>} Scoring result with blended score
+ */
+async function scorePost(text) {
+  // Run heuristic engine (synchronous, instant)
+  const heuristicResult = scorePostHeuristic(text);
+
+  // Attempt ML scoring (async, may take 200-500ms)
+  let mlResult = null;
+  if (typeof mlScore === 'function') {
+    try {
+      mlResult = await mlScore(text);
+    } catch (e) {
+      mlResult = { score: 0, available: false };
+    }
+  }
+
+  const mlAvailable = mlResult && mlResult.available;
+  let finalScore;
+
+  if (mlAvailable) {
+    // Blend: ML 70% + Heuristic 30%
+    finalScore = Math.min(
+      Math.round(mlResult.score * 0.7 + heuristicResult.score * 0.3),
+      100
+    );
+  } else {
+    // Fallback to heuristic only
+    finalScore = heuristicResult.score;
+  }
+
+  return {
+    // Primary score field (backward compatible — overlay.js uses result.score)
+    score: finalScore,
+    // Existing fields (backward compatible)
+    layers: heuristicResult.layers,
+    topSignals: heuristicResult.topSignals,
+    wordCount: heuristicResult.wordCount,
+    rawTotal: heuristicResult.rawTotal,
+    normalizationMultiplier: heuristicResult.normalizationMultiplier,
+    convergenceBonus: heuristicResult.convergenceBonus,
+    firingCategories: heuristicResult.firingCategories,
+    partial: heuristicResult.partial,
+    // New ML-related fields
+    mlScore: mlAvailable ? mlResult.score : null,
+    mlConfidence: mlAvailable ? mlResult.confidence : null,
+    mlLabel: mlAvailable ? mlResult.label : null,
+    heuristicScore: heuristicResult.score,
+    mlAvailable: !!mlAvailable,
+    blendMode: mlAvailable ? 'full' : 'heuristic-only'
   };
 }
