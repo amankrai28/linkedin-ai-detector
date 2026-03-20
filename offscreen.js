@@ -4,7 +4,15 @@
  * Runs in an offscreen document to avoid LinkedIn's CSP restrictions.
  */
 
-import { pipeline } from '@huggingface/transformers';
+import { pipeline, env } from '@huggingface/transformers';
+
+// Point ONNX Runtime to the extension's bundled WASM file
+env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('build/');
+// Use single-threaded WASM to avoid SharedArrayBuffer requirement
+env.backends.onnx.wasm.numThreads = 1;
+// Disable local model check and filesystem caching (not available in extension)
+env.allowLocalModels = false;
+env.useFSCache = false;
 
 let classifier = null;
 let modelLoading = false;

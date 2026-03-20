@@ -47955,6 +47955,10 @@ var __webpack_exports__zeros = __webpack_exports__.zeros;
 var __webpack_exports__zeros_like = __webpack_exports__.zeros_like;
 
 // offscreen.js
+__webpack_exports__env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("build/");
+__webpack_exports__env.backends.onnx.wasm.numThreads = 1;
+__webpack_exports__env.allowLocalModels = false;
+__webpack_exports__env.useFSCache = false;
 var classifier = null;
 var modelLoading = false;
 var modelReady = false;
