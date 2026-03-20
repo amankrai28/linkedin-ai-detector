@@ -8,7 +8,10 @@ import { pipeline, env } from '@huggingface/transformers';
 
 // Configure ONNX Runtime for Chrome extension context
 try {
-  env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL('build/');
+  env.backends.onnx.wasm.wasmPaths = {
+    mjs: chrome.runtime.getURL('build/ort-wasm-simd-threaded.jsep.mjs'),
+    wasm: chrome.runtime.getURL('build/ort-wasm-simd-threaded.jsep.wasm')
+  };
   env.backends.onnx.wasm.numThreads = 1;
 } catch (e) {
   console.warn('[AI Detector ML] Could not configure ONNX wasm env:', e.message);

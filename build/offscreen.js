@@ -47956,7 +47956,10 @@ var __webpack_exports__zeros_like = __webpack_exports__.zeros_like;
 
 // offscreen.js
 try {
-  __webpack_exports__env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("build/");
+  __webpack_exports__env.backends.onnx.wasm.wasmPaths = {
+    mjs: chrome.runtime.getURL("build/ort-wasm-simd-threaded.jsep.mjs"),
+    wasm: chrome.runtime.getURL("build/ort-wasm-simd-threaded.jsep.wasm")
+  };
   __webpack_exports__env.backends.onnx.wasm.numThreads = 1;
 } catch (e) {
   console.warn("[AI Detector ML] Could not configure ONNX wasm env:", e.message);
