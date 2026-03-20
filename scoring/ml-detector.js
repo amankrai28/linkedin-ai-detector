@@ -18,7 +18,7 @@ async function mlScore(text) {
     if (response && response.success) {
       // Model returns { label: 'Real'|'Fake', score: 0-1 }
       // Map to our 0-100 scale: 'Fake' with high confidence = high AI score
-      const aiScore = response.label === 'Fake'
+      const aiScore = response.label === 'ChatGPT'
         ? Math.round(response.confidence * 100)
         : Math.round((1 - response.confidence) * 100);
 

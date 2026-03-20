@@ -149,21 +149,30 @@ function scorePostHeuristic(text) {
 }
 
 /**
- * Main scoring function — combines ML model with heuristic engine using
- * Noisy-OR: P(AI) = 1 - (1 - H/100)(1 - M/100).
- * Falls back to heuristic-only when ML model is unavailable.
+ * Synchronous heuristic-only scoring with Unicode normalization.
+ * Used for instant badge rendering before ML results arrive.
  *
- * @param {string} text - The post text to score
- * @returns {Promise<object>} Scoring result with blended score
+ * @param {string} text - The post text to score (will be NFKC-normalized)
+ * @returns {object} Heuristic scoring result
  */
-async function scorePost(text) {
-  // Normalize Unicode: converts mathematical bold/italic (common in LinkedIn
-  // formatting) to standard ASCII so both the ML tokenizer and heuristic
-  // patterns can match them.
+// eslint-disable-next-line no-unused-vars
+function scorePostSync(text) {
   text = text.normalize('NFKC');
+  return scorePostHeuristic(text);
+}
 
-  // Run heuristic engine (synchronous, instant)
-  const heuristicResult = scorePostHeuristic(text);
+/**
+ * Async ML scoring that blends with a pre-computed heuristic result
+ * using Noisy-OR: P(AI) = 1 - (1 - H/100)(1 - M/100).
+ * Called after the heuristic badge is already displayed.
+ *
+ * @param {string} text - The post text (will be NFKC-normalized)
+ * @param {object} heuristicResult - Pre-computed result from scorePostSync()
+ * @returns {Promise<object>} Full scoring result with blended score
+ */
+// eslint-disable-next-line no-unused-vars
+async function scorePostWithML(text, heuristicResult) {
+  text = text.normalize('NFKC');
 
   // Attempt ML scoring (async, may take 200-500ms)
   let mlResult = null;
@@ -202,7 +211,7 @@ async function scorePost(text) {
     convergenceBonus: heuristicResult.convergenceBonus,
     firingCategories: heuristicResult.firingCategories,
     partial: heuristicResult.partial,
-    // New ML-related fields
+    // ML-related fields
     mlScore: mlAvailable ? mlResult.score : null,
     mlConfidence: mlAvailable ? mlResult.confidence : null,
     mlLabel: mlAvailable ? mlResult.label : null,

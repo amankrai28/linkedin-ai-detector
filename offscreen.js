@@ -49,7 +49,7 @@ async function loadModel(attempt = 0) {
     classifier = await Promise.race([
       pipeline(
         'text-classification',
-        'onnx-community/roberta-base-openai-detector-ONNX',
+        'onnx-community/chatgpt-detector-roberta-ONNX',
         { dtype: 'q8' }
       ),
       timeout
