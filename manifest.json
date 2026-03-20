@@ -39,8 +39,14 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "web_accessible_resources": [{
-    "resources": ["build/ort-wasm-simd-threaded.jsep.wasm"],
+    "resources": [
+      "build/ort-wasm-simd-threaded.jsep.wasm",
+      "build/ort-wasm-simd-threaded.jsep.mjs"
+    ],
     "matches": ["<all_urls>"]
   }]
 }
