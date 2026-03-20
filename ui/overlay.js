@@ -144,7 +144,7 @@ function renderScoreBadge(postContainer, postText, result) {
     tooltipSuffix = ' (limited text)';
   } else if (result && result.blendMode === 'heuristic-only') {
     tooltipSuffix = ' (loading ML model...)';
-  } else if (result && result.blendMode === 'full') {
+  } else if (result && result.blendMode === 'noisy-or') {
     tooltipSuffix = ' (ML + heuristic)';
   }
   badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100${tooltipSuffix} — ${getScoreLabel(score)}`);

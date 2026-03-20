@@ -1,8 +1,10 @@
 /**
  * LinkedIn AI Detector — Scoring Engine (Orchestrator)
  *
- * Blends ML model scores (primary, 70% weight) with heuristic scores
- * (secondary, 30% weight) for final AI detection scoring.
+ * Combines ML model scores with heuristic scores using a Noisy-OR model
+ * from probability theory: P(AI) = 1 - (1 - H/100)(1 - M/100).
+ * This treats each detector as an independent evidence source — neither
+ * can drag down the other, and convergence amplifies the signal.
  *
  * Falls back to heuristic-only scoring when the ML model is not yet loaded.
  *
@@ -147,7 +149,8 @@ function scorePostHeuristic(text) {
 }
 
 /**
- * Main scoring function — blends ML model (70%) with heuristic engine (30%).
+ * Main scoring function — combines ML model with heuristic engine using
+ * Noisy-OR: P(AI) = 1 - (1 - H/100)(1 - M/100).
  * Falls back to heuristic-only when ML model is unavailable.
  *
  * @param {string} text - The post text to score
@@ -171,13 +174,14 @@ async function scorePost(text) {
   let finalScore;
 
   if (mlAvailable) {
-    // Blend: ML 70% + Heuristic 30%
-    finalScore = Math.min(
-      Math.round(mlResult.score * 0.7 + heuristicResult.score * 0.3),
-      100
-    );
+    // Noisy-OR: treats detectors as independent evidence sources.
+    // P(AI) = 1 - (1 - H/100)(1 - M/100)
+    // Neither detector can drag down the other; convergence amplifies.
+    const h = heuristicResult.score / 100;
+    const m = mlResult.score / 100;
+    finalScore = Math.round((1 - (1 - h) * (1 - m)) * 100);
   } else {
-    // Fallback to heuristic only
+    // ML not available — heuristic only (equivalent to Noisy-OR with M=0)
     finalScore = heuristicResult.score;
   }
 
@@ -199,6 +203,6 @@ async function scorePost(text) {
     mlLabel: mlAvailable ? mlResult.label : null,
     heuristicScore: heuristicResult.score,
     mlAvailable: !!mlAvailable,
-    blendMode: mlAvailable ? 'full' : 'heuristic-only'
+    blendMode: mlAvailable ? 'noisy-or' : 'heuristic-only'
   };
 }
