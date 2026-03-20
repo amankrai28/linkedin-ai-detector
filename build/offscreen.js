@@ -47970,10 +47970,21 @@ var classifier = null;
 var modelLoading = false;
 var modelReady = false;
 var LOAD_TIMEOUT = 6e4;
-async function loadModel() {
+var MODEL_RETRIES = 2;
+var RETRY_DELAY = 5e3;
+function relayStatus(status, extra = {}) {
+  chrome.runtime.sendMessage({
+    type: "ML_MODEL_STATUS",
+    status,
+    ...extra
+  }).catch(() => {
+  });
+}
+async function loadModel(attempt = 0) {
   if (modelLoading || modelReady) return;
   modelLoading = true;
   console.log("[AI Detector ML] Loading model...");
+  relayStatus("loading", { attempt });
   const startTime = performance.now();
   try {
     const timeout = new Promise(
@@ -47990,11 +48001,21 @@ async function loadModel() {
     modelReady = true;
     const elapsed = Math.round(performance.now() - startTime);
     console.log(`[AI Detector ML] Model loaded (${elapsed}ms)`);
+    relayStatus("ready", { elapsed });
     chrome.runtime.sendMessage({ type: "ML_MODEL_READY" }).catch(() => {
     });
   } catch (err) {
     console.error("[AI Detector ML] Failed to load model:", err);
     modelLoading = false;
+    if (attempt < MODEL_RETRIES) {
+      const delay = RETRY_DELAY * Math.pow(2, attempt);
+      console.log(`[AI Detector ML] Retrying in ${delay / 1e3}s (attempt ${attempt + 1}/${MODEL_RETRIES})...`);
+      relayStatus("retrying", { attempt: attempt + 1, error: err.message, nextRetryMs: delay });
+      setTimeout(() => loadModel(attempt + 1), delay);
+    } else {
+      console.error("[AI Detector ML] All retries exhausted. Model unavailable.");
+      relayStatus("failed", { error: err.message });
+    }
   }
 }
 loadModel();
