@@ -35,7 +35,7 @@ loadModel();
 
 // Listen for scoring requests from the background service worker
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type !== 'ML_SCORE_REQUEST') return false;
+  if (msg.type !== 'ML_SCORE_OFFSCREEN') return false;
 
   if (!modelReady) {
     sendResponse({ success: false, error: 'Model not ready' });
