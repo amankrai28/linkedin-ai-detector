@@ -67,7 +67,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         await ensureOffscreenDocument();
         const response = await chrome.runtime.sendMessage({
-          type: 'ML_SCORE_REQUEST',
+          type: 'ML_SCORE_OFFSCREEN',
           text: msg.text
         });
         sendResponse(response);
