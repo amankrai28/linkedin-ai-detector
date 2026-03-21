@@ -103,7 +103,7 @@ function createBreakdownCard(result) {
   if (result.partial) parts.push('limited text');
   if (result.convergenceBonus > 0) parts.push(`+${result.convergenceBonus} convergence`);
   if (result.mlAvailable) {
-    parts.push(`ML: ${result.mlScore}/100`);
+    parts.push(`ML: ${result.mlScore}/100${result.mlLabel ? ` (${result.mlLabel})` : ''}`);
     parts.push(`Heuristic: ${result.heuristicScore}/100`);
   } else if (result.blendMode === 'heuristic-only') {
     parts.push('ML model loading...');
@@ -145,6 +145,13 @@ function updateScoreBadge(postContainer, result) {
   }
   badge.setAttribute('data-tooltip', `AI Pattern Score: ${score}/100${tooltipSuffix} — ${getScoreLabel(score)}`);
   badge._aiResult = result;
+
+  // Refresh open breakdown card if present
+  const existingCard = postContainer.querySelector('.laid-breakdown-card');
+  if (existingCard) {
+    const newCard = createBreakdownCard(result);
+    existingCard.replaceWith(newCard);
+  }
 }
 
 /**
