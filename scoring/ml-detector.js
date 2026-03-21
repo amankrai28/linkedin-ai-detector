@@ -10,15 +10,17 @@ async function mlScore(text) {
   // the ML_MODEL_READY message triggers a full re-score of all posts
   // (see content.js), so retrying here would just block the UI.
   try {
+    // Preprocess: strip LinkedIn noise (emojis, URLs, hashtags, @mentions)
+    const cleaned = typeof preprocessForML === 'function' ? preprocessForML(text) : text;
+
     const response = await chrome.runtime.sendMessage({
       type: 'ML_SCORE_REQUEST',
-      text: text
+      text: cleaned
     });
 
     if (response && response.success) {
-      // Model returns { label: 'Real'|'Fake', score: 0-1 }
-      // Map to our 0-100 scale: 'Fake' with high confidence = high AI score
-      const aiScore = response.label === 'ChatGPT'
+      // Fakespot model returns { label: 'AI'|'Human', score: 0-1 }
+      const aiScore = response.label === 'AI'
         ? Math.round(response.confidence * 100)
         : Math.round((1 - response.confidence) * 100);
 

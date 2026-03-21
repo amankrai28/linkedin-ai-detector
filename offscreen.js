@@ -49,7 +49,7 @@ async function loadModel(attempt = 0) {
     classifier = await Promise.race([
       pipeline(
         'text-classification',
-        'onnx-community/chatgpt-detector-roberta-ONNX',
+        'amankrai28/fakespot-roberta-ai-detector-onnx',
         { dtype: 'q8' }
       ),
       timeout

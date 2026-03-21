@@ -17,6 +17,7 @@
         "scoring/structure.js",
         "scoring/stylometry.js",
         "scoring/linkedin.js",
+        "scoring/ml-preprocess.js",
         "scoring/ml-detector.js",
         "scoring/engine.js",
         "content.js",

@@ -140,3 +140,9 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# ONNX model files (too large for git)
+benchmark/fakespot-onnx/
+benchmark/fakespot-onnx-q8/
+benchmark/hf-upload/onnx/
+*.onnx
