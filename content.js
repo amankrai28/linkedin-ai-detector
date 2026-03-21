@@ -100,7 +100,11 @@ function findPostContainers() {
       const elements = document.querySelectorAll(selector);
       elements.forEach((el) => {
         if (!el.hasAttribute(PROCESSED_ATTR) && !found.has(el)) {
-          found.set(el, selector);
+          // Skip if any ancestor is already processed (prevents nested dupes
+          // from bypassing dedup on subsequent observer-triggered calls)
+          if (!el.closest(`[${PROCESSED_ATTR}]`)) {
+            found.set(el, selector);
+          }
         }
       });
     } catch (e) {
@@ -118,6 +122,7 @@ function findPostContainers() {
     );
     candidates.forEach((el) => {
       if (el.hasAttribute(PROCESSED_ATTR) || found.has(el)) return;
+      if (el.closest(`[${PROCESSED_ATTR}]`)) return;
 
       const hasText =
         el.querySelector('span.break-words') ||

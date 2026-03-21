@@ -129,7 +129,21 @@ function dismissBreakdownCard() {
  */
 // eslint-disable-next-line no-unused-vars
 function updateScoreBadge(postContainer, result) {
-  const badge = postContainer.querySelector('.laid-score-badge');
+  let badge = postContainer.querySelector('.laid-score-badge');
+
+  // Fallback: if container was detached by LinkedIn's virtual scroll,
+  // re-find it in the live DOM by data-urn
+  if (!badge || !document.contains(postContainer)) {
+    const urn = postContainer.getAttribute('data-urn');
+    if (urn) {
+      const live = document.querySelector(`[data-urn="${urn}"] .laid-score-badge`);
+      if (live) {
+        badge = live;
+        postContainer = live.closest('[data-ai-scored]') || live.parentElement;
+      }
+    }
+  }
+
   if (!badge) return;
 
   const score = result.score;
