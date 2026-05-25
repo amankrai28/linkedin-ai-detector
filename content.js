@@ -228,20 +228,31 @@ const SEE_MORE_SELECTORS = [
   'a[class*="see-more"]',
 ];
 
+// Matches the visible "see-more" trigger inside a post. As of late 2026 LinkedIn
+// renders this as a <button> with text "… more" (note the space) and fully
+// obfuscated classes — no aria-label, no role, no stable attributes. So the
+// only durable hook is the text content.
+const SEE_MORE_TEXT_RE = /^(?:…|\.{3})\s*more$|^see more$/i;
+
 function findSeeMoreButton(container) {
   for (const selector of SEE_MORE_SELECTORS) {
     const btn = container.querySelector(selector);
     if (btn) return btn;
   }
-  // Fallback: any button/anchor whose visible text is "…more", "...more", or "see more"
-  const clickables = container.querySelectorAll('button, a');
+  const clickables = container.querySelectorAll('button, a, [role="button"]');
   for (const el of clickables) {
-    const txt = el.innerText.trim().toLowerCase();
-    if (txt === '…more' || txt === '...more' || txt === 'see more') {
-      return el;
-    }
+    const txt = (el.innerText || '').trim();
+    if (SEE_MORE_TEXT_RE.test(txt)) return el;
   }
   return null;
+}
+
+// Returns true if text still looks truncated (LinkedIn appends "… more" inline,
+// or the body literally ends with an ellipsis).
+function looksTruncated(text) {
+  if (!text) return false;
+  const tail = text.trim().slice(-20);
+  return /(?:…|\.{3})\s*more\s*$/i.test(tail) || /…\s*$/.test(tail);
 }
 
 function sleep(ms) {
@@ -263,21 +274,35 @@ async function processPost(container) {
   // Mark as processed now that we know there's text to score
   container.setAttribute(PROCESSED_ATTR, 'true');
 
-  // Expand truncated posts by clicking "see more"
-  const seeMoreBtn = findSeeMoreButton(container);
-  if (seeMoreBtn) {
-    const beforeWords = earlyText.split(/\s+/).length;
+  // Expand truncated posts by clicking "see more". Retry once if the first
+  // click didn't take effect (LinkedIn sometimes re-renders the body).
+  let expansionAttempts = 0;
+  while (expansionAttempts < 2) {
+    const currentText = expansionAttempts === 0 ? earlyText : extractPostText(container);
+    if (!currentText || !looksTruncated(currentText)) break;
+    const seeMoreBtn = findSeeMoreButton(container);
+    if (!seeMoreBtn) break;
+    const beforeWords = currentText.split(/\s+/).length;
     seeMoreBtn.click();
-    await sleep(100);
+    await sleep(150);
     const afterText = extractPostText(container);
     const afterWords = afterText ? afterText.split(/\s+/).length : 0;
     if (afterWords > beforeWords) {
       console.log(LOG_PREFIX, `Expanded truncated post (was ~${beforeWords} words, now ${afterWords} words)`);
+      break;
     }
+    expansionAttempts++;
   }
 
   const text = extractPostText(container);
   if (!text) return;
+
+  // If the post still looks truncated, score the available text but flag the
+  // result as partial so the badge tooltip is honest and auto-expand skips it.
+  const wasTruncated = looksTruncated(text);
+  if (wasTruncated) {
+    console.warn(LOG_PREFIX, `Post still truncated after expansion attempt; scoring on partial text`);
+  }
 
   // Ensure the container can anchor absolutely-positioned children
   const position = getComputedStyle(container).position;
@@ -296,6 +321,7 @@ async function processPost(container) {
   if (heuristicResult) {
     const heuristicDisplay = {
       ...heuristicResult,
+      partial: heuristicResult.partial || wasTruncated,
       mlScore: null, mlConfidence: null, mlLabel: null,
       heuristicScore: heuristicResult.score,
       mlAvailable: false, blendMode: 'heuristic-only'
@@ -325,7 +351,7 @@ async function processPost(container) {
           console.log(LOG_PREFIX, `  ML: ${fullResult.mlScore}/100 (${fullResult.mlLabel}, ${fullResult.mlConfidence.toFixed(2)} confidence) | Heuristic: ${fullResult.heuristicScore}/100 | Blended: ${fullResult.score}/100`);
 
           if (typeof updateScoreBadge === 'function') {
-            updateScoreBadge(container, fullResult);
+            updateScoreBadge(container, { ...fullResult, partial: fullResult.partial || wasTruncated });
           }
           try {
             chrome.runtime.sendMessage({ type: 'POST_SCORED', score: fullResult.score });
