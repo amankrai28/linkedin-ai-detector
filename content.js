@@ -59,29 +59,12 @@ try {
 try {
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'SETTINGS_CHANGED') {
-      const prevMode = extensionSettings.displayMode;
       extensionSettings = msg.settings;
       console.log(LOG_PREFIX, 'Settings updated:', extensionSettings);
       if (!extensionSettings.enabled || extensionSettings.displayMode === 'off') {
-        // Hide all existing badges
         document.querySelectorAll('.laid-score-badge').forEach(b => b.style.display = 'none');
       } else {
-        // Show all badges
         document.querySelectorAll('.laid-score-badge').forEach(b => b.style.display = '');
-      }
-      // React to badge-expand toggle: open or close cards on existing badges
-      if (extensionSettings.displayMode === 'badge-expand' && prevMode !== 'badge-expand') {
-        document.querySelectorAll('.laid-score-badge').forEach(badge => {
-          const result = badge._aiResult;
-          if (!result || result.partial) return;
-          const container = badge.parentElement;
-          if (container && !container.querySelector('.laid-breakdown-card') &&
-              typeof openBreakdownCard === 'function') {
-            openBreakdownCard(container, badge, { dismissOthers: false, closeOnOutsideClick: false });
-          }
-        });
-      } else if (prevMode === 'badge-expand' && extensionSettings.displayMode !== 'badge-expand') {
-        document.querySelectorAll('.laid-breakdown-card').forEach(c => c.remove());
       }
     }
     if (msg.type === 'ML_MODEL_STATUS') {
@@ -259,6 +242,20 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// LinkedIn scrolls inside <main id="workspace">, not the window. To restore
+// scroll after a see-more click, find the closest scrollable ancestor.
+function findScrollAncestor(el) {
+  let cur = el && el.parentElement;
+  while (cur && cur !== document.body) {
+    const overflowY = getComputedStyle(cur).overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && cur.scrollHeight > cur.clientHeight) {
+      return cur;
+    }
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
 // ─── PROCESSING ───
 
 async function processPost(container) {
@@ -276,6 +273,11 @@ async function processPost(container) {
 
   // Expand truncated posts by clicking "see more". Retry once if the first
   // click didn't take effect (LinkedIn sometimes re-renders the body).
+  // LinkedIn's expansion handler can call scrollIntoView() on the expanded
+  // post, so we snapshot + restore the scroll position of the actual
+  // scrolling ancestor (LinkedIn scrolls inside <main id="workspace">,
+  // not the window). Without this, refreshing the feed with many
+  // truncated posts visible causes the page to jump as expansions cascade.
   let expansionAttempts = 0;
   while (expansionAttempts < 2) {
     const currentText = expansionAttempts === 0 ? earlyText : extractPostText(container);
@@ -283,8 +285,15 @@ async function processPost(container) {
     const seeMoreBtn = findSeeMoreButton(container);
     if (!seeMoreBtn) break;
     const beforeWords = currentText.split(/\s+/).length;
+    const scrollEl = findScrollAncestor(container);
+    const scrollAnchor = scrollEl ? scrollEl.scrollTop : window.scrollY;
     seeMoreBtn.click();
     await sleep(150);
+    const after = scrollEl ? scrollEl.scrollTop : window.scrollY;
+    if (Math.abs(after - scrollAnchor) > 30) {
+      if (scrollEl) scrollEl.scrollTop = scrollAnchor;
+      else window.scrollTo({ top: scrollAnchor, behavior: 'instant' });
+    }
     const afterText = extractPostText(container);
     const afterWords = afterText ? afterText.split(/\s+/).length : 0;
     if (afterWords > beforeWords) {
@@ -335,9 +344,7 @@ async function processPost(container) {
 
     // Render badge immediately with heuristic score
     if (typeof renderScoreBadge === 'function') {
-      renderScoreBadge(container, text, heuristicDisplay, {
-        autoExpand: extensionSettings.displayMode === 'badge-expand'
-      });
+      renderScoreBadge(container, text, heuristicDisplay);
       try {
         chrome.runtime.sendMessage({ type: 'POST_SCORED', score: heuristicResult.score });
       } catch (e) { /* extension context may be invalidated */ }
@@ -369,14 +376,49 @@ async function processPost(container) {
   }
 }
 
+// Single processing queue — every processPost call goes through here, so
+// see-more clicks never overlap. Concurrent clicks were the root cause of
+// the feed scroll-jump (LinkedIn's expansion handler calls scrollIntoView,
+// and parallel clicks made the last-clicked post's scrollIntoView win).
+let processingQueue = Promise.resolve();
+function enqueueProcessPost(post) {
+  processingQueue = processingQueue
+    .then(() => processPost(post))
+    .catch(err => console.warn(LOG_PREFIX, 'queue error:', err));
+  return processingQueue;
+}
+
+// IntersectionObserver to defer scoring of posts that aren't in the viewport.
+// LinkedIn loads ~10 posts at first paint; many are below the fold. Without
+// deferral we'd click see-more on off-screen posts at page load — those
+// clicks cascade scrollIntoView calls and yank the user to the bottom of
+// the feed.
+const pendingPosts = new WeakSet();
+const viewportObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.isIntersecting && pendingPosts.has(entry.target)) {
+      pendingPosts.delete(entry.target);
+      viewportObserver.unobserve(entry.target);
+      enqueueProcessPost(entry.target);
+    }
+  }
+}, { rootMargin: '200px 0px' }); // 200px below viewport: pre-score just-below-fold
+
 async function processAllPosts() {
   const posts = findPostContainers();
-  if (posts.length > 0) {
-    console.log(LOG_PREFIX, `Found ${posts.length} new post(s)`);
+  if (posts.length === 0) return;
+  console.log(LOG_PREFIX, `Found ${posts.length} new post(s)`);
+
+  for (const post of posts) {
+    const rect = post.getBoundingClientRect();
+    const inView = rect.bottom > -200 && rect.top < window.innerHeight + 200;
+    if (inView) {
+      enqueueProcessPost(post);
+    } else {
+      pendingPosts.add(post);
+      viewportObserver.observe(post);
+    }
   }
-  // Process all posts in parallel — each one renders its heuristic badge
-  // immediately, ML updates trickle in as they complete.
-  await Promise.all(posts.map(post => processPost(post)));
 }
 
 // ─── UTILITIES ───

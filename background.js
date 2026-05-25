@@ -48,6 +48,11 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get('settings', (data) => {
     if (!data.settings) {
       chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
+    } else if (data.settings.displayMode === 'badge-expand') {
+      // Migration: auto-expand mode was removed; reset to badge-only.
+      chrome.storage.local.set({
+        settings: { ...data.settings, displayMode: 'badge' }
+      });
     }
   });
   chrome.storage.session.set({ stats: DEFAULT_STATS });
