@@ -169,13 +169,46 @@ function updateScoreBadge(postContainer, result) {
 }
 
 /**
+ * Opens a breakdown card under the given badge.
+ * @param {HTMLElement} postContainer
+ * @param {HTMLElement} badge
+ * @param {{dismissOthers?: boolean, closeOnOutsideClick?: boolean}} [opts]
+ */
+// eslint-disable-next-line no-unused-vars
+function openBreakdownCard(postContainer, badge, opts = {}) {
+  const { dismissOthers = true, closeOnOutsideClick = true } = opts;
+
+  if (postContainer.querySelector('.laid-breakdown-card')) return;
+  if (!badge._aiResult) return;
+
+  if (dismissOthers) dismissBreakdownCard();
+
+  const card = createBreakdownCard(badge._aiResult);
+  postContainer.appendChild(card);
+
+  if (closeOnOutsideClick) {
+    const closeHandler = (evt) => {
+      if (!card.contains(evt.target) && evt.target !== badge) {
+        card.remove();
+        document.removeEventListener('click', closeHandler, true);
+      }
+    };
+    // Delay to avoid the current click from triggering close
+    setTimeout(() => {
+      document.addEventListener('click', closeHandler, true);
+    }, 0);
+  }
+}
+
+/**
  * Renders a score badge in the top-right corner of a post container.
  * @param {HTMLElement} postContainer - The post's DOM element
  * @param {string} postText - The extracted post text
  * @param {object|null} result - Scoring engine result, or null for fallback
+ * @param {{autoExpand?: boolean}} [opts]
  * @returns {number} The score that was rendered
  */
-function renderScoreBadge(postContainer, postText, result) {
+function renderScoreBadge(postContainer, postText, result, opts = {}) {
   // Guard against duplicate badges
   if (postContainer.querySelector('.laid-score-badge')) return -1;
 
@@ -212,28 +245,20 @@ function renderScoreBadge(postContainer, postText, result) {
       return;
     }
 
-    // Dismiss any other open card first
-    dismissBreakdownCard();
-
-    if (!badge._aiResult) return;
-
-    const card = createBreakdownCard(badge._aiResult);
-    postContainer.appendChild(card);
-
-    // Close when clicking outside the card
-    const closeHandler = (evt) => {
-      if (!card.contains(evt.target) && evt.target !== badge) {
-        card.remove();
-        document.removeEventListener('click', closeHandler, true);
-      }
-    };
-    // Delay to avoid the current click from triggering close
-    setTimeout(() => {
-      document.addEventListener('click', closeHandler, true);
-    }, 0);
+    openBreakdownCard(postContainer, badge);
   });
 
   postContainer.appendChild(badge);
+
+  // Auto-expand for "badge + auto-expand" display mode. Skip partial-analysis
+  // posts (too short to have meaningful breakdown). Don't dismiss other cards
+  // or close on outside-click — auto-expanded cards persist alongside each other.
+  if (opts.autoExpand && result && !result.partial) {
+    openBreakdownCard(postContainer, badge, {
+      dismissOthers: false,
+      closeOnOutsideClick: false
+    });
+  }
 
   return score;
 }

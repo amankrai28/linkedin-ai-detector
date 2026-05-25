@@ -89,6 +89,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'ML_MODEL_STATUS') {
+    // Persist latest status so the popup can read it on open
+    chrome.storage.session.set({
+      lastModelStatus: {
+        status: msg.status,
+        error: msg.error,
+        elapsed: msg.elapsed,
+        attempt: msg.attempt,
+        nextRetryMs: msg.nextRetryMs,
+        ts: Date.now()
+      }
+    });
     // Relay model loading status from offscreen document to content scripts
     chrome.tabs.query({ url: 'https://www.linkedin.com/*' }, (tabs) => {
       for (const tab of tabs) {
@@ -96,6 +107,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
     });
     return false;
+  }
+
+  if (msg.type === 'GET_MODEL_STATUS') {
+    chrome.storage.session.get('lastModelStatus', (data) => {
+      sendResponse(data.lastModelStatus || { status: 'unknown' });
+    });
+    return true; // async
   }
 
   if (msg.type === 'POST_SCORED') {

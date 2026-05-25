@@ -40,6 +40,8 @@ const PROCESSED_ATTR = 'data-ai-scored';
 const DEBOUNCE_MS = 150;
 const LOG_PREFIX = '[AI Detector]';
 
+console.log(LOG_PREFIX, `content script loaded on ${location.href}`);
+
 // ─── SETTINGS ───
 
 let extensionSettings = { enabled: true, displayMode: 'badge' };
@@ -57,6 +59,7 @@ try {
 try {
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'SETTINGS_CHANGED') {
+      const prevMode = extensionSettings.displayMode;
       extensionSettings = msg.settings;
       console.log(LOG_PREFIX, 'Settings updated:', extensionSettings);
       if (!extensionSettings.enabled || extensionSettings.displayMode === 'off') {
@@ -65,6 +68,20 @@ try {
       } else {
         // Show all badges
         document.querySelectorAll('.laid-score-badge').forEach(b => b.style.display = '');
+      }
+      // React to badge-expand toggle: open or close cards on existing badges
+      if (extensionSettings.displayMode === 'badge-expand' && prevMode !== 'badge-expand') {
+        document.querySelectorAll('.laid-score-badge').forEach(badge => {
+          const result = badge._aiResult;
+          if (!result || result.partial) return;
+          const container = badge.parentElement;
+          if (container && !container.querySelector('.laid-breakdown-card') &&
+              typeof openBreakdownCard === 'function') {
+            openBreakdownCard(container, badge, { dismissOthers: false, closeOnOutsideClick: false });
+          }
+        });
+      } else if (prevMode === 'badge-expand' && extensionSettings.displayMode !== 'badge-expand') {
+        document.querySelectorAll('.laid-breakdown-card').forEach(c => c.remove());
       }
     }
     if (msg.type === 'ML_MODEL_STATUS') {
@@ -95,13 +112,12 @@ try {
 function findPostContainers() {
   const found = new Map(); // element -> matched selector (for debug logging)
 
+  // ── Strategy 1: Legacy class/data-urn selectors (still work on some pages) ──
   for (const selector of SELECTORS.postContainer) {
     try {
       const elements = document.querySelectorAll(selector);
       elements.forEach((el) => {
         if (!el.hasAttribute(PROCESSED_ATTR) && !found.has(el)) {
-          // Skip if any ancestor is already processed (prevents nested dupes
-          // from bypassing dedup on subsequent observer-triggered calls)
           if (!el.closest(`[${PROCESSED_ATTR}]`)) {
             found.set(el, selector);
           }
@@ -112,51 +128,34 @@ function findPostContainers() {
     }
   }
 
-  // Heuristic fallback: containers with both a text block and social
-  // action buttons (like/comment/repost). Always runs as a supplement
-  // to catch posts on activity pages where class names may differ.
+  // ── Strategy 2: Structural anchor (survives class obfuscation) ──
+  // LinkedIn's "Open control menu for post by NAME" button is a stable
+  // per-post anchor with a unique aria-label pattern. Walk up to find the
+  // post container — the ancestor that holds both the menu button AND the
+  // post-level Comment/Repost action buttons.
   const primaryCount = found.size;
   try {
-    const candidates = document.querySelectorAll(
-      'div[data-urn], div[data-id], article[data-urn], div.occludable-update'
-    );
-    candidates.forEach((el) => {
-      if (el.hasAttribute(PROCESSED_ATTR) || found.has(el)) return;
-      if (el.closest(`[${PROCESSED_ATTR}]`)) return;
-
-      const hasText =
-        el.querySelector('span.break-words') ||
-        el.querySelector('div[dir="ltr"]') ||
-        el.querySelector('div[class*="update-components-text"]');
-
-      const hasSocialActions =
-        el.querySelector('button[aria-label*="Like"]') ||
-        el.querySelector('button[aria-label*="like"]') ||
-        el.querySelector('button[aria-label*="Comment"]') ||
-        el.querySelector('button[aria-label*="Repost"]') ||
-        el.querySelector('.social-actions-button') ||
-        el.querySelector('.feed-shared-social-action-bar') ||
-        el.querySelector('.social-details-social-counts');
-
-      const hasAvatar =
-        el.querySelector('img.feed-shared-actor__avatar-image') ||
-        el.querySelector('img[alt*="profile"]') ||
-        el.querySelector('a[href*="/in/"] img');
-
-      // Match if text + social actions, or text + avatar
-      if (hasText && (hasSocialActions || hasAvatar)) {
-        found.set(el, 'heuristic-fallback (text + social/avatar)');
+    const anchors = document.querySelectorAll('button[aria-label^="Open control menu for post by"]');
+    anchors.forEach((btn) => {
+      let cur = btn;
+      for (let i = 0; i < 12 && cur && cur !== document.body; i++) {
+        if (cur.querySelector('button[aria-label*="Comment"]') &&
+            cur.querySelector('button[aria-label*="Repost"]')) {
+          if (!cur.hasAttribute(PROCESSED_ATTR) && !found.has(cur) &&
+              !cur.closest(`[${PROCESSED_ATTR}]`)) {
+            found.set(cur, 'aria-anchor (control menu)');
+          }
+          break;
+        }
+        cur = cur.parentElement;
       }
     });
-    const heuristicCount = found.size - primaryCount;
-    if (heuristicCount > 0) {
-      console.log(
-        LOG_PREFIX,
-        `Heuristic fallback found ${heuristicCount} additional post(s)`
-      );
+    const newCount = found.size - primaryCount;
+    if (newCount > 0) {
+      console.log(LOG_PREFIX, `Aria-anchor strategy found ${newCount} post(s)`);
     }
   } catch (e) {
-    console.warn(LOG_PREFIX, 'Heuristic fallback failed:', e);
+    console.warn(LOG_PREFIX, 'Aria-anchor strategy failed:', e);
   }
 
   // Deduplicate nested containers — if a matched element is a descendant
@@ -175,16 +174,22 @@ function findPostContainers() {
     nested.forEach(el => found.delete(el));
   }
 
-  // Log which selector matched each container for debugging
-  found.forEach((selector, el) => {
-    const urn = el.getAttribute('data-urn') || '(no urn)';
-    console.log(LOG_PREFIX, `Matched: "${selector}" — urn: ${urn}`);
-  });
-
   return Array.from(found.keys());
 }
 
+// Patterns that identify a <p> as something other than post body text:
+// "X and Y like this", "X reposted this", "Followed by X", etc.
+const NON_BODY_TEXT_PATTERNS = [
+  /\blikes? this\b/i,
+  /\breposted (this|by)\b/i,
+  /\bcommented on\b/i,
+  /\bfollow(ed|s|ing)?\b/i,
+  /^Promoted$/i,
+  /^Suggested$/i,
+];
+
 function extractPostText(container) {
+  // Strategy 1: Legacy selectors (still work on some pages / older buckets).
   for (const selector of SELECTORS.postText) {
     try {
       const el = container.querySelector(selector);
@@ -196,7 +201,22 @@ function extractPostText(container) {
       console.warn(LOG_PREFIX, 'Text selector failed:', selector, e);
     }
   }
-  return null;
+
+  // Strategy 2: Largest <p> inside the container that isn't a notification line.
+  // LinkedIn's new (obfuscated-class) feed renders post body as <p> tags.
+  const paragraphs = Array.from(container.querySelectorAll('p'));
+  let best = null;
+  let bestLen = 0;
+  for (const p of paragraphs) {
+    const text = (p.innerText || '').trim();
+    if (text.length < 20) continue;
+    if (NON_BODY_TEXT_PATTERNS.some(re => re.test(text))) continue;
+    if (text.length > bestLen) {
+      best = text;
+      bestLen = text.length;
+    }
+  }
+  return best;
 }
 
 // ─── SEE-MORE EXPANSION ───
@@ -289,7 +309,9 @@ async function processPost(container) {
 
     // Render badge immediately with heuristic score
     if (typeof renderScoreBadge === 'function') {
-      renderScoreBadge(container, text, heuristicDisplay);
+      renderScoreBadge(container, text, heuristicDisplay, {
+        autoExpand: extensionSettings.displayMode === 'badge-expand'
+      });
       try {
         chrome.runtime.sendMessage({ type: 'POST_SCORED', score: heuristicResult.score });
       } catch (e) { /* extension context may be invalidated */ }
