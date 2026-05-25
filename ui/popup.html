@@ -194,6 +194,23 @@
     .band-dot.green { background: #2e7d32; }
     .band-dot.amber { background: #f57c00; }
     .band-dot.red { background: #c62828; }
+    .band-dot.gray { background: #bbb; }
+
+    .model-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .model-status .band-dot {
+      width: 10px;
+      height: 10px;
+    }
+    .model-status-detail {
+      font-size: 10px;
+      color: #888;
+      margin-left: auto;
+    }
 
     /* API key */
     .api-key-input {
@@ -272,6 +289,15 @@
         <input type="radio" name="displayMode" value="badge-expand">
         <span>Badge + auto-expand details</span>
       </label>
+    </div>
+  </div>
+
+  <div class="popup-section">
+    <div class="popup-section-title">ML Model</div>
+    <div class="model-status">
+      <span class="band-dot gray" id="modelStatusDot"></span>
+      <span id="modelStatusLabel">Checking…</span>
+      <span class="model-status-detail" id="modelStatusDetail"></span>
     </div>
   </div>
 
