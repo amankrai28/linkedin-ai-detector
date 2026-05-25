@@ -150,3 +150,8 @@ benchmark/hf-upload/onnx/
 # macOS cruft
 .DS_Store
 **/.DS_Store
+
+# Labeled benchmark data — contains third-party LinkedIn post text.
+# Keep the schema, runner, and example committed; keep raw posts local.
+benchmark/labeled-set.json
+benchmark/results/
