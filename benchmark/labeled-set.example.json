@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "createdAt": "2026-05-25",
+  "notes": "Example file. Real labeled set lives in labeled-set.json (gitignored — contains third-party LinkedIn post text).",
+  "posts": [
+    {
+      "id": "example-ai-1",
+      "text": "Let me tell you something that might surprise you.\n\nLast week, I was sitting in a meeting when it hit me — leadership isn't about having all the answers. It's about asking the right questions.\n\nThree things changed how I think:\n\n1. Listen first. Speak second.\n2. Curiosity beats certainty.\n3. The best leaders build other leaders.\n\nWhat's been your biggest leadership lesson? Drop it in the comments. 👇",
+      "wordCount": 64,
+      "label": "ai",
+      "ai_involvement": 0.9,
+      "confidence": "high",
+      "source": {
+        "type": "named-profile",
+        "profileUrl": "https://www.linkedin.com/in/example/",
+        "collectedAt": "2026-05-25"
+      },
+      "notes": "Stand-in. Replace with real collected posts in labeled-set.json."
+    },
+    {
+      "id": "example-human-1",
+      "text": "spent 2 hours debugging a race condition today. turned out it was an off-by-one in the retry loop. so dumb. anyway, here's a tip: when you have async retries, ALWAYS log the attempt number alongside the result. would have saved me 1.5 of those 2 hours.",
+      "wordCount": 49,
+      "label": "human",
+      "ai_involvement": 0.0,
+      "confidence": "high",
+      "source": {
+        "type": "self",
+        "collectedAt": "2022-03-14"
+      }
+    },
+    {
+      "id": "example-hybrid-1",
+      "text": "Brainstormed this with Claude, then edited in my own voice. The core observation: founders underestimate how much energy goes into context-switching between fundraising and building. Solution that's worked for me — strict 'no investor calls before noon' rule. Mornings stay for the team and the product. Afternoons handle the world.",
+      "wordCount": 52,
+      "label": "hybrid",
+      "ai_involvement": 0.4,
+      "confidence": "high",
+      "source": {
+        "type": "self",
+        "collectedAt": "2026-05-01"
+      },
+      "notes": "Typical workflow: brainstorm with AI, draft with AI assistance, final edit by hand."
+    }
+  ]
+}
