@@ -5,7 +5,6 @@
  */
 
 const enableToggle = document.getElementById('enableToggle');
-const displayModeRadios = document.querySelectorAll('input[name="displayMode"]');
 const apiKeyInput = document.getElementById('apiKey');
 const resetStatsBtn = document.getElementById('resetStats');
 
@@ -24,9 +23,6 @@ const modelStatusDetail = document.getElementById('modelStatusDetail');
 chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (settings) => {
   if (!settings) return;
   enableToggle.checked = settings.enabled;
-  displayModeRadios.forEach(r => {
-    r.checked = r.value === settings.displayMode;
-  });
   if (settings.apiKey) {
     apiKeyInput.value = settings.apiKey;
   }
@@ -103,14 +99,9 @@ chrome.runtime.sendMessage({ type: 'GET_MODEL_STATUS' }, renderModelStatus);
 // ─── Save settings on change ───
 
 function saveSettings() {
-  let displayMode = 'badge';
-  displayModeRadios.forEach(r => {
-    if (r.checked) displayMode = r.value;
-  });
-
   const settings = {
     enabled: enableToggle.checked,
-    displayMode,
+    displayMode: 'badge',
     apiKey: apiKeyInput.value.trim()
   };
 
@@ -118,7 +109,6 @@ function saveSettings() {
 }
 
 enableToggle.addEventListener('change', saveSettings);
-displayModeRadios.forEach(r => r.addEventListener('change', saveSettings));
 
 // ─── Reset stats ───
 
