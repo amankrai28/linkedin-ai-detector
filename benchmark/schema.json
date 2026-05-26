@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/amankrai28/linkedin-ai-detector/benchmark/schema.json",
+  "title": "Labeled LinkedIn-post set for benchmarking AI detection",
+  "type": "object",
+  "required": ["version", "posts"],
+  "properties": {
+    "version": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date" },
+    "notes": { "type": "string" },
+    "posts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/post" }
+    }
+  },
+  "$defs": {
+    "post": {
+      "type": "object",
+      "required": ["id", "text", "label", "ai_involvement", "confidence", "source"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable identifier. Use the LinkedIn activity URN if available, else a hash."
+        },
+        "text": {
+          "type": "string",
+          "description": "Full post body, with truncation expanded. Newlines preserved."
+        },
+        "wordCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Computed from text.split(/\\s+/).length."
+        },
+        "label": {
+          "type": "string",
+          "enum": ["human", "ai", "hybrid"],
+          "description": "Coarse label for binary/3-class evaluation."
+        },
+        "ai_involvement": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fine-grained dial. 0.0 = end-to-end human; 0.2 = AI ideation only; 0.4 = AI drafts + heavy human edit; 0.7 = AI drafts + light edit; 0.9 = polished AI (heavy AI, light human polish); 1.0 = raw AI, no edit."
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "How confident we are in the label. 'high' = known provenance (you wrote it, or named-AI profile). 'medium' = ensemble agreement of >=2 detectors. 'low' = single signal."
+        },
+        "source": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["self", "friend", "named-profile", "feed-random", "synthetic"]
+            },
+            "profileUrl": { "type": "string" },
+            "postUrl": { "type": "string" },
+            "collectedAt": { "type": "string", "format": "date" }
+          }
+        },
+        "tier2_scores": {
+          "type": "object",
+          "description": "Scores from external detectors used as Tier-2 pseudo-labels. All optional.",
+          "properties": {
+            "gptzero": { "type": ["number", "null"] },
+            "zerogpt": { "type": ["number", "null"] },
+            "originality": { "type": ["number", "null"] }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

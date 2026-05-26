@@ -1,0 +1,39 @@
+#!/bin/sh
+# Block accidental commits of real LinkedIn profile URLs in source files.
+#
+# Setup once per clone:
+#   git config core.hooksPath .githooks
+#
+# `linkedin.com/in/example-slug` and `linkedin.com/in/USERNAME` are allowed
+# (used as placeholders in docstrings); any other slug fails the commit.
+
+set -e
+
+# Files staged for commit, minus the local labeled-set (which is gitignored
+# anyway) and example fixtures.
+FILES=$(git diff --cached --name-only --diff-filter=ACM \
+  | grep -v '^benchmark/labeled-set.json$' \
+  | grep -v '^benchmark/labeled-set.example.json$' \
+  || true)
+
+if [ -z "$FILES" ]; then
+  exit 0
+fi
+
+BAD=""
+for f in $FILES; do
+  [ -f "$f" ] || continue
+  # Match linkedin.com/in/<slug> where slug is not "example-slug" or "USERNAME"
+  if grep -E "linkedin\.com/in/[a-z0-9][a-z0-9-]+" "$f" 2>/dev/null \
+       | grep -vE "linkedin\.com/in/(example-slug|USERNAME)" \
+       >/dev/null; then
+    BAD="$BAD $f"
+  fi
+done
+
+if [ -n "$BAD" ]; then
+  echo "✗ pre-commit: real LinkedIn profile URL in:$BAD"
+  echo "  Use 'linkedin.com/in/example-slug' or 'linkedin.com/in/USERNAME' for placeholders."
+  echo "  If a real URL is genuinely needed, bypass with: git commit --no-verify"
+  exit 1
+fi
