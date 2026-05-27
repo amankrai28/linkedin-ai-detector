@@ -1,6 +1,6 @@
 {
   "name": "linkedin-ai-detector",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "dependencies": {
     "@huggingface/transformers": "^3.0.0"
@@ -9,6 +9,6 @@
     "esbuild": "^0.24.0"
   },
   "scripts": {
-    "build": "esbuild offscreen.js --bundle --outfile=build/offscreen.js --format=iife && sed -i \"s/var import_meta = {};/var import_meta = { url: (document.currentScript \\&\\& document.currentScript.src) || location.href };/\" build/offscreen.js && sed -i \"s/var import_meta2 = {};/var import_meta2 = { url: (document.currentScript \\&\\& document.currentScript.src) || location.href };/\" build/offscreen.js && cp node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs build/"
+    "build": "esbuild offscreen.js --bundle --outfile=build/offscreen.js --format=iife && node scripts/postbuild.js && cp node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs build/"
   }
 }

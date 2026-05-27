@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn AI Detector",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Detect AI-pattern signals on LinkedIn posts. Local-first, open source. Signal, not a verdict.",
   "homepage_url": "https://github.com/amankrai28/linkedin-ai-detector",
   "permissions": ["storage", "activeTab", "offscreen"],

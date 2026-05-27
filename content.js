@@ -116,19 +116,43 @@ function findPostContainers() {
   // ── Strategy 2: Structural anchor (survives class obfuscation) ──
   // LinkedIn's "Open control menu for post by NAME" button is a stable
   // per-post anchor with a unique aria-label pattern. Walk up to find the
-  // post container — the ancestor that holds both the menu button AND the
-  // post-level Comment/Repost action buttons.
+  // closest ancestor that contains the post body text — that's the most
+  // resilient definition of "post container" because LinkedIn rotates
+  // both class names AND aria-labels (Comment/Repost) but the body text
+  // element has to exist for the post to be visible.
+  const BODY_HINTS = [
+    'div.feed-shared-text',
+    'span.break-words',
+    'div.feed-shared-update-v2__description',
+    'div.update-components-text',
+    'div.update-components-text__text-view',
+    'div[class*="update-components-text"]'
+  ];
+  function hasPostBody(el) {
+    for (const sel of BODY_HINTS) {
+      try {
+        const t = el.querySelector(sel);
+        if (t && (t.innerText || '').trim().length > 20) return true;
+      } catch (_) {}
+    }
+    // Also accept any <p> with substantial body text (filter out tiny labels)
+    const ps = el.querySelectorAll('p');
+    for (let i = 0; i < ps.length; i++) {
+      const t = (ps[i].innerText || '').trim();
+      if (t.length > 30 && !/^(\d+\s?[smhdwy]|Promoted|Edited)\b/i.test(t)) return true;
+    }
+    return false;
+  }
   const primaryCount = found.size;
   try {
     const anchors = document.querySelectorAll('button[aria-label^="Open control menu for post by"]');
     anchors.forEach((btn) => {
-      let cur = btn;
-      for (let i = 0; i < 12 && cur && cur !== document.body; i++) {
-        if (cur.querySelector('button[aria-label*="Comment"]') &&
-            cur.querySelector('button[aria-label*="Repost"]')) {
+      let cur = btn.parentElement;
+      for (let i = 0; i < 15 && cur && cur !== document.body; i++) {
+        if (hasPostBody(cur)) {
           if (!cur.hasAttribute(PROCESSED_ATTR) && !found.has(cur) &&
               !cur.closest(`[${PROCESSED_ATTR}]`)) {
-            found.set(cur, 'aria-anchor (control menu)');
+            found.set(cur, 'aria-anchor (body)');
           }
           break;
         }

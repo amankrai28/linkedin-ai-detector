@@ -155,3 +155,6 @@ benchmark/hf-upload/onnx/
 # Keep the schema, runner, and example committed; keep raw posts local.
 benchmark/labeled-set.json
 benchmark/results/
+
+# Web Store submission artifacts (built locally, not source)
+submission/
