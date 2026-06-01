@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<!--
+  LinkedIn AI Detector — LIVE-PIPELINE wiring harness (instrument 1)
+
+  Exercises the REAL pipeline that the bugs live in: content.js's MutationObserver
+  + capture-phase scroll sweep + idle-scheduled scan. Does NOT set __laid_test, so
+  all of that auto-installs. A real <main> exists before the scripts run, so
+  attachObserver() binds to it.
+
+  What it proves offline (no human, no real scroll):
+    1. Posts STREAMED into <main> after load fire the MutationObserver → debounced,
+       idle-scheduled full scan → badges appear. This is the exact path behind
+       "badges stop appearing on scroll-loaded posts".
+    2. A synthetic capture-phase scroll event reaches content.js's listener and
+       schedules a sweep scan (counters.scans increments with no new posts).
+
+  Honest limits (see project memory): a headless / backgrounded tab throttles rAF +
+  IntersectionObserver and programmatic scrollTop doesn't emit a real scroll event,
+  so below-fold IO-deferred posts and TRUE smooth-scroll behavior can't be
+  reproduced here — that's the user's foreground test. We therefore stream posts
+  that stay IN VIEW (short bodies, small batches) so they take the reliable direct
+  badge path, and use the timer/observer-driven chain (which DOES fire headless via
+  its forcing timeouts).
+
+  Serve over HTTP from repo root:
+      python3 -m http.server 8754
+      http://localhost:8754/test/harness-pipeline.html
+  Machine-readable verdict: window.__laidPipeline and <html data-laid-pipeline="...">.
+-->
+<head>
+  <meta charset="utf-8">
+  <title>LAID live-pipeline harness</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    html, body { margin: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    main { display: block; }
+    #feed { padding: 12px; margin-right: 440px; }
+    .laid-bench-post { margin-bottom: 8px; border: 1px solid #eee; padding: 8px; }
+    #out {
+      position: fixed; top: 0; right: 0; width: 420px; height: 100vh;
+      margin: 0; padding: 12px; box-sizing: border-box; overflow: auto;
+      background: #14161a; color: #d7dbe0; z-index: 2147483647;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .laid-pass { color: #5dd55d; font-weight: 700; }
+    .laid-fail { color: #ff6b6b; font-weight: 700; }
+    .laid-dim  { color: #8a93a0; }
+  </style>
+</head>
+<body>
+  <!-- Real <main> BEFORE the scripts so attachObserver() binds to it at load. -->
+  <main>
+    <div id="feed"></div>
+  </main>
+  <pre id="out">loading…</pre>
+
+  <!-- 1. Capture console errors/warns + shim chrome.* (NO __laid_test → real pipeline). -->
+  <script>
+    try { localStorage.setItem('laid_debug', '1'); } catch (_) {}
+    window.__laidErrors = [];
+    (function () {
+      const wrap = (orig, kind) => function (...a) {
+        try { window.__laidErrors.push(kind + ': ' + a.map(x => (x && x.message) || String(x)).join(' ')); } catch (_) {}
+        return orig.apply(console, a);
+      };
+      console.error = wrap(console.error, 'error');
+      console.warn = wrap(console.warn, 'warn');
+    })();
+    function __laidShimReply(msg) {
+      if (msg && msg.type === 'GET_SETTINGS') return { enabled: true, displayMode: 'badge', apiKey: '' };
+      if (msg && msg.type === 'ML_SCORE_REQUEST') return { success: false };
+      return { ok: true };
+    }
+    window.chrome = {
+      runtime: {
+        sendMessage(msg, cb) {
+          if (typeof cb === 'function') { setTimeout(() => cb(__laidShimReply(msg)), 0); return; }
+          return Promise.resolve(__laidShimReply(msg));
+        },
+        onMessage: { addListener() {}, removeListener() {} },
+        getManifest() { return { update_url: 'shim' }; },
+        lastError: null,
+      },
+      storage: {
+        local:   { get(_k, cb) { cb && cb({}); }, set(_v, cb) { cb && cb(); } },
+        session: { get(_k, cb) { cb && cb({}); }, set(_v, cb) { cb && cb(); } },
+      },
+    };
+  </script>
+
+  <!-- 2. Extension scripts in EXACT manifest order (they self-init: observer + scroll sweep + initial scan). -->
+  <script src="../scoring/vocabulary.js"></script>
+  <script src="../scoring/structure.js"></script>
+  <script src="../scoring/stylometry.js"></script>
+  <script src="../scoring/linkedin.js"></script>
+  <script src="../scoring/ml-preprocess.js"></script>
+  <script src="../scoring/ml-detector.js"></script>
+  <script src="../scoring/engine.js"></script>
+  <script src="../content.js"></script>
+  <script src="../ui/overlay.js"></script>
+
+  <!-- 3. Driver: stream posts in bursts; let the REAL observer/scan badge them. -->
+  <script>
+  (async function () {
+    const out = document.getElementById('out');
+    out.textContent = '';
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const log = (s, cls) => out.insertAdjacentHTML('beforeend', `<span class="${cls || ''}">${esc(s)}</span>\n`);
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const feed = document.getElementById('feed');
+
+    function publish(r) {
+      window.__laidPipeline = r;
+      try { document.documentElement.setAttribute('data-laid-pipeline', JSON.stringify(r)); } catch (_) {}
+    }
+
+    const BODIES = [
+      "quick update from the team this week, shipped the new onboarding flow and early numbers look encouraging so far",
+      "spent the morning pairing on a gnarly caching bug and finally tracked it down to a stale key, small fix big relief",
+      "reminder that rest is part of the work, took a real lunch break today and came back sharper for the afternoon push",
+      "we hired two engineers this month and the energy on the team has completely changed, grateful for this group",
+      "shipped a tiny docs improvement that nobody asked for and three people thanked me, sweat the small stuff",
+      "honest reflection, i said yes to too many meetings last quarter and it cost me focus, cutting that in half now",
+    ];
+    const WRAP_DEPTH = 5; // same self-contained nesting as harness-stress (5-ancestor scope per post)
+    function wrapDeep(inner, depth) { let s = inner; for (let d = 0; d < depth; d++) s = `<div class="w${d}">${s}</div>`; return s; }
+    let _uid = 0;
+    function makePostEl(i) {
+      const body = `<p class="laid-bench-body" dir="ltr"><span>${esc(BODIES[i % BODIES.length])}</span></p>`;
+      const el = document.createElement('div');
+      el.className = 'laid-bench-post';
+      el.innerHTML = `
+        <div class="hdr">
+          <a href="/in/streamed-${_uid}"><span>Streamed Author ${_uid}</span></a>
+          <span class="ts">${(_uid % 12) + 1}h</span>
+          <button type="button" aria-label="Open control menu for post by Streamed Author ${_uid}">&#8943;</button>
+        </div>
+        ${wrapDeep(body, WRAP_DEPTH)}
+        <div class="acts">
+          <button type="button">Like</button><button type="button">Comment</button>
+          <button type="button">Repost</button><a href="#" role="button">Send</a>
+        </div>`;
+      _uid++;
+      return el;
+    }
+    function streamBatch(n) { for (let i = 0; i < n; i++) feed.appendChild(makePostEl(i)); }
+    const badgeCount = () => document.querySelectorAll('.laid-score-badge').length;
+    const counters = () => (window.__laid && window.__laid.getCounters) ? window.__laid.getCounters() : null;
+
+    if (!window.__laid) { log('window.__laid missing', 'laid-fail'); return publish({ ok: false, error: 'no __laid hook' }); }
+
+    const BATCH = 6;
+    // ── Batch 1: stream → real MutationObserver → idle scan → badges. ──
+    log(`streaming batch 1 (${BATCH} posts) → waiting for MutationObserver + idle scan…`, 'laid-dim');
+    streamBatch(BATCH);
+    await sleep(2200); // debounce(300/800) + rIC(timeout 1000) + queue drain, with headroom
+    const badges1 = badgeCount();
+    log(`after batch 1: badges=${badges1}/${BATCH}  counters=${JSON.stringify(counters())}`, badges1 === BATCH ? 'laid-dim' : 'laid-fail');
+
+    // ── Scroll-sweep wiring: synthetic capture-phase scroll, NO new posts. ──
+    const scansBefore = counters() ? counters().scans : 0;
+    log(`dispatching synthetic scroll (scans=${scansBefore})…`, 'laid-dim');
+    window.dispatchEvent(new Event('scroll'));
+    document.getElementById('feed').dispatchEvent(new Event('scroll', { bubbles: true }));
+    await sleep(1600); // onScroll setTimeout(180) → scheduleScan → rIC(timeout 1000)
+    const scansAfter = counters() ? counters().scans : 0;
+    const scrollSweepFired = scansAfter > scansBefore;
+    log(`after synthetic scroll: scans ${scansBefore} → ${scansAfter}  sweep ${scrollSweepFired ? 'FIRED' : 'did NOT fire'}`, scrollSweepFired ? 'laid-dim' : 'laid-fail');
+
+    // ── Batch 2: stream more (the "scroll-loaded posts" case). ──
+    log(`streaming batch 2 (${BATCH} posts)…`, 'laid-dim');
+    streamBatch(BATCH);
+    await sleep(2200);
+    const total = BATCH * 2;
+    const badges2 = badgeCount();
+    log(`after batch 2: badges=${badges2}/${total}  counters=${JSON.stringify(counters())}`, badges2 === total ? 'laid-dim' : 'laid-fail');
+
+    const errors = (window.__laidErrors || []).filter(e => !/scorePostSync not available/i.test(e));
+    const pass = badges2 === total && scrollSweepFired && errors.length === 0;
+    log('');
+    log(`RESULT: ${pass ? 'PASS' : 'FAIL'} — badged ${badges2}/${total}, scroll-sweep ${scrollSweepFired ? 'ok' : 'FAILED'}, errors ${errors.length}`,
+        pass ? 'laid-pass' : 'laid-fail');
+    if (errors.length) errors.slice(0, 6).forEach(e => log('  ' + e, 'laid-fail'));
+
+    publish({
+      ok: true, pass,
+      inserted: total, badges: badges2, badgesAfterBatch1: badges1,
+      scrollSweepFired, scansBefore, scansAfter,
+      counters: counters(), errors: errors.slice(0, 10),
+    });
+  })().catch((e) => {
+    const r = { ok: false, error: String(e && e.message || e) };
+    window.__laidPipeline = r;
+    try { document.documentElement.setAttribute('data-laid-pipeline', JSON.stringify(r)); } catch (_) {}
+  });
+  </script>
+</body>
+</html>

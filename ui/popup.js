@@ -5,6 +5,7 @@
  */
 
 const enableToggle = document.getElementById('enableToggle');
+const badgeCommentsToggle = document.getElementById('badgeCommentsToggle');
 const apiKeyInput = document.getElementById('apiKey');
 const resetStatsBtn = document.getElementById('resetStats');
 
@@ -23,6 +24,7 @@ const modelStatusDetail = document.getElementById('modelStatusDetail');
 chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (settings) => {
   if (!settings) return;
   enableToggle.checked = settings.enabled;
+  badgeCommentsToggle.checked = settings.badgeComments !== false;
   if (settings.apiKey) {
     apiKeyInput.value = settings.apiKey;
   }
@@ -102,6 +104,7 @@ function saveSettings() {
   const settings = {
     enabled: enableToggle.checked,
     displayMode: 'badge',
+    badgeComments: badgeCommentsToggle.checked,
     apiKey: apiKeyInput.value.trim()
   };
 
@@ -109,6 +112,7 @@ function saveSettings() {
 }
 
 enableToggle.addEventListener('change', saveSettings);
+badgeCommentsToggle.addEventListener('change', saveSettings);
 
 // ─── Reset stats ───
 

@@ -7,6 +7,7 @@
 const DEFAULT_SETTINGS = {
   enabled: true,
   displayMode: 'badge', // 'badge' | 'badge-expand' | 'off'
+  badgeComments: true,  // also badge expanded comments (toggle in popup)
   apiKey: ''
 };
 
@@ -15,6 +16,47 @@ const DEFAULT_STATS = {
   totalScore: 0,
   bands: { green: 0, amber: 0, red: 0 }
 };
+
+// ─── REMOTE SELECTOR CONFIG ───
+// Fetch the hosted selectors.json so a LinkedIn DOM change can be fixed by editing
+// ONE file — no new extension package, no Web Store review, no user action. This is
+// remote DATA (selector strings), not code, so it's MV3/Web-Store compliant. The
+// content script ships with the same selectors bundled and uses them whenever this
+// fetch hasn't landed, so it's a live-update channel, never a hard dependency.
+// To repoint it, change CONFIG_URL (and host_permissions in manifest.json).
+const CONFIG_URL = 'https://raw.githubusercontent.com/amankrai28/linkedin-ai-detector/main/selectors.json';
+const CONFIG_REFRESH_ALARM = 'laid-config-refresh';
+
+// Shape-check so a malformed (or tampered) file can't blank out detection.
+function validateRemoteConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object' || !cfg.selectors || typeof cfg.selectors !== 'object') return false;
+  const s = cfg.selectors;
+  const strOk = (v) => typeof v === 'string' && v.length > 0;
+  const feedOk = Array.isArray(s.feedRoot) ? (s.feedRoot.length > 0 && s.feedRoot.every(strOk)) : (s.feedRoot === undefined || strOk(s.feedRoot));
+  const itemOk = s.postItem === undefined || strOk(s.postItem);
+  const markerOk = s.postMarker === undefined || strOk(s.postMarker);
+  // Require at least one real selector and no malformed fields.
+  return feedOk && itemOk && markerOk && (s.feedRoot || s.postItem || s.postMarker);
+}
+
+async function fetchRemoteConfig() {
+  try {
+    const res = await fetch(CONFIG_URL, { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const cfg = await res.json();
+    if (!validateRemoteConfig(cfg)) { console.warn('[AI Detector] remote config invalid — keeping current'); return; }
+    const prev = (await chrome.storage.local.get('laid_config')).laid_config;
+    if (prev && prev.version === cfg.version) return; // unchanged since last fetch
+    await chrome.storage.local.set({ laid_config: cfg });
+    console.log('[AI Detector] remote selector config updated → v' + cfg.version);
+    // Push to any open LinkedIn tabs so they apply it live, no reload needed.
+    chrome.tabs.query({ url: 'https://www.linkedin.com/*' }, (tabs) => {
+      for (const tab of tabs) chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATED', config: cfg }).catch(() => {});
+    });
+  } catch (err) {
+    console.warn('[AI Detector] remote config fetch failed (using cached/bundled defaults):', err.message);
+  }
+}
 
 // ─── OFFSCREEN DOCUMENT MANAGEMENT ───
 
@@ -57,15 +99,37 @@ chrome.runtime.onInstalled.addListener(() => {
   });
   chrome.storage.session.set({ stats: DEFAULT_STATS });
   ensureOffscreenDocument();
+  fetchRemoteConfig();
+  try { chrome.alarms.create(CONFIG_REFRESH_ALARM, { periodInMinutes: 360 }); } catch (_) {}
 });
 
 // Ensure offscreen document on startup (e.g., browser restart)
 chrome.runtime.onStartup.addListener(() => {
   ensureOffscreenDocument();
+  fetchRemoteConfig();
+  try { chrome.alarms.create(CONFIG_REFRESH_ALARM, { periodInMinutes: 360 }); } catch (_) {}
+});
+
+// Periodic refresh so long-lived installs pick up selector fixes without a relaunch.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CONFIG_REFRESH_ALARM) fetchRemoteConfig();
 });
 
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'DEV_RELOAD') {
+    // Dev-only: reload the unpacked extension from disk so the live-debug loop
+    // can iterate code → reload → re-probe without opening chrome://extensions.
+    // Guarded to unpacked installs — Web Store builds get an injected
+    // `update_url`, so this is a no-op in production even if somehow triggered.
+    const isUnpacked = !('update_url' in chrome.runtime.getManifest());
+    if (isUnpacked) {
+      console.log('[AI Detector] DEV_RELOAD — reloading unpacked extension');
+      chrome.runtime.reload();
+    }
+    return false;
+  }
+
   if (msg.type === 'ML_SCORE_REQUEST') {
     // Relay ML scoring request from content script to offscreen document
     (async () => {
@@ -144,7 +208,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'GET_SETTINGS') {
     chrome.storage.local.get('settings', (data) => {
-      sendResponse(data.settings || DEFAULT_SETTINGS);
+      // Merge over defaults so setting fields added in a later version (e.g.
+      // badgeComments) get their default even for users whose stored settings predate
+      // them — otherwise the field reads as undefined and silently behaves as "off".
+      sendResponse({ ...DEFAULT_SETTINGS, ...(data.settings || {}) });
     });
     return true;
   }

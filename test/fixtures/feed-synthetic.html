@@ -1,0 +1,49 @@
+<!--
+  Synthetic, PII-free fixture mimicking LinkedIn's late-2026 redesigned feed DOM:
+    - hashed/obfuscated class names
+    - NO <time> element (timestamp is a short text span, e.g. "3h")
+    - post body is a <span> nested inside a <p> (only the <p> selector tier
+      matches; span.break-words and div[dir="ltr"] are absent — exactly what
+      content-first detection must survive)
+    - engagement controls: Like/Comment/Repost as <button>, Send as <a>
+    - the control-menu <button aria-label="Open control menu for post by ...">
+
+  SINGLE post by design. A hand-authored MULTI-post fixture cannot faithfully
+  reproduce LinkedIn's deep per-post nesting, so findSemanticAnchors' 5-ancestor
+  scope would bleed across sibling posts and collapse them into one container —
+  a fixture artifact, not a real bug. For the multi-post regression assertion,
+  capture a real fixture (fixtures/feed-live*.html, gitignored — contains
+  third-party text + profile URLs).
+
+  Author slug is the pre-commit-hook-approved placeholder "example-slug".
+-->
+<div class="_8f2a1c scaffold-layout__main" role="main">
+  <div class="a93b2e1 feed-list">
+    <div class="b71c4d0 feed-item f3335b76" data-test-post>
+
+      <div class="c0ffee1 update-header">
+        <a href="/in/example-slug" class="d11ee22 author-link">
+          <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" alt="" width="48" height="48">
+          <span class="aa11bb author-name">Jane Example</span>
+        </a>
+        <span class="bb22cc author-subline">Founder &amp; CEO · 3rd+</span>
+        <span class="cc33dd post-timestamp">3h</span>
+        <button type="button" aria-label="Open control menu for post by Jane Example" class="dd44ee menu-btn">&#8943;</button>
+      </div>
+
+      <div class="ee55ff update-content">
+        <div class="ff66aa text-wrap">
+          <p class="aa77bb body-paragraph" dir="ltr"><span class="bb88cc line-clamp">I used to think productivity was about doing more. I was wrong. After years of optimizing every single hour of my day, I finally realized that the highest-leverage move is subtraction, not addition. Here is what actually changed for me. First, I stopped measuring my output in hours and started measuring it in outcomes that mattered to customers. Second, I cut every recurring meeting that did not have a clear decision attached to it, and the calendar suddenly had room to breathe. Third, I built a single source of truth for priorities so my team never had to guess what mattered most this week. The results genuinely surprised me. We shipped faster than before, the team felt noticeably calmer, and our customers noticed the difference almost immediately. The lesson is simple to say but hard to live by: clarity beats intensity, and less truly is more when every remaining thing is the right thing. What is one commitment you could remove this week to make room for the work that actually moves the needle?</span></p>
+        </div>
+      </div>
+
+      <div class="aa99bb social-actions">
+        <button type="button" class="like-btn">Like</button>
+        <button type="button" class="comment-btn">Comment</button>
+        <button type="button" class="repost-btn">Repost</button>
+        <a href="#" role="button" class="send-btn">Send</a>
+      </div>
+
+    </div>
+  </div>
+</div>

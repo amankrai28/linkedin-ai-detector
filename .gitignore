@@ -158,3 +158,9 @@ benchmark/results/
 
 # Web Store submission artifacts (built locally, not source)
 submission/
+
+# Live-captured LinkedIn DOM fixtures for the offline harness (test/) — these
+# contain third-party post text + real /in/<slug> profile URLs, same policy as
+# benchmark/labeled-set.json. Keep local. The committed, PII-free harness
+# fixture is test/fixtures/feed-synthetic.html.
+test/fixtures/feed-live*.html

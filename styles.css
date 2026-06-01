@@ -1,6 +1,22 @@
 /* LinkedIn AI Detector — Badge Styles
    All classes prefixed with "laid-" to avoid LinkedIn CSS collisions */
 
+/* Marker class applied to every processed post container. Provides the
+   positioning context for the absolutely-positioned score badge without us
+   having to write inline `style.position = 'relative'` in JS — a class
+   toggle is much cheaper than an inline style write because the browser
+   doesn't have to invalidate per-element computed style.
+   `!important` is REQUIRED: LinkedIn's own class-based rules on post
+   containers (obfuscated classes like `_5183f9ed` etc.) declare
+   `position: static` and would otherwise override us via CSS specificity
+   tied to their later-loaded stylesheet. Without !important the badge's
+   `position: absolute` falls through to the next relative ancestor — the
+   feed root or viewport — and visually disappears off-screen. Verified
+   on live LinkedIn DOM via MCP. */
+.laid-container {
+  position: relative !important;
+}
+
 .laid-score-badge {
   position: absolute;
   top: 8px;

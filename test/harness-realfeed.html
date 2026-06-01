@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<!--
+  LinkedIn AI Detector — FAITHFUL real-feed harness (Phase 1 of the rebuild)
+
+  Why this exists: the previous offline harness used ~15-node toy posts and timed a
+  SINGLE scan, so it measured 5ms when the real feed scans in 53ms and never showed
+  the jank or the badge-failure. This harness reproduces the real ENVIRONMENT so the
+  feedback loop is finally trustworthy:
+
+    1. HEAVY posts calibrated to a live capture (read-only) of the real feed:
+       ~583 nodes, ~29 <p> (ALL candidates are <p>), ~117 <span>, ~55 button/a,
+       nesting depth ~21. Several long <p> per post (body + comment/suggested text)
+       so the scan OVER-detects exactly like reality (live: 15 found vs 3 real posts).
+    2. A virtualization + streaming SIMULATOR: keeps a window of posts in an inner
+       overflow scroller (like main#workspace), STREAMS new posts in bursts as you
+       near the bottom, RECYCLES off-screen nodes (reuses the element for new
+       content), and fires LinkedIn-style churn mutations — the dynamics our pipeline
+       actually has to survive.
+    3. The REAL extension pipeline (NOT __laid_test): the live MutationObserver +
+       scroll sweep + IntersectionObserver all install.
+    4. An independent frame-drop + badge-coverage monitor (separate from the
+       extension's own profiler) so we measure the OUTCOME: dropped frames during a
+       real native scroll, and badges/visible holding (or not) as the feed grows.
+
+  Native scroll is driven EXTERNALLY by test/run-headless.mjs --scroll (real wheel
+  events via CDP + focus emulation so rAF/IO run un-throttled). This page just sets
+  up the world and measures. It also self-reports its per-post density so we can
+  confirm the calibration matches the live numbers before trusting any result.
+
+  Serve from repo root: python3 -m http.server 8754
+    http://localhost:8754/test/harness-realfeed.html?posts=40&stream=1
+  Beacons for the runner: window.__laidReal, <html data-laid-real / data-laid-cal>.
+-->
+<head>
+  <meta charset="utf-8">
+  <title>LAID faithful real-feed harness</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    /* Inner scroller, like LinkedIn's main#workspace (scroll happens INSIDE this). */
+    #scroller { height: 100vh; overflow-y: scroll; overflow-x: hidden; }
+    #feed { width: 560px; margin: 0 auto; padding: 12px 0; }
+    .sim-post { margin: 0 0 8px; background: #fff; border: 1px solid #e6e6e6; border-radius: 8px; padding: 12px; }
+    .sim-body { font-size: 14px; line-height: 1.45; }
+    .sim-meta p, .sim-comment p { font-size: 13px; color: #555; margin: 2px 0; }
+    .sim-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .sim-spacer { height: 40vh; }
+    #hud {
+      position: fixed; top: 0; right: 0; width: 320px; max-height: 100vh; overflow: auto;
+      margin: 0; padding: 10px; box-sizing: border-box; background: #14161a; color: #d7dbe0;
+      z-index: 2147483646; font: 11px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap;
+    }
+    .hi { color: #ffd166; } .ok { color: #5dd55d; } .bad { color: #ff6b6b; } .dim { color: #8a93a0; }
+  </style>
+</head>
+<body>
+  <!-- Real <main> so the extension's attachObserver() binds to it. Scroll lives inside. -->
+  <main>
+    <div id="scroller"><div id="feed"></div><div class="sim-spacer"></div></div>
+  </main>
+  <pre id="hud">init…</pre>
+
+  <!-- 1. Shim chrome.* + DEBUG. NO __laid_test → the REAL pipeline installs. -->
+  <script>
+    try { localStorage.setItem('laid_debug', '1'); } catch (_) {}
+    window.__laidErrors = [];
+    (function () {
+      const wrap = (orig, kind) => function (...a) {
+        try { window.__laidErrors.push(kind + ': ' + a.map(x => (x && x.message) || String(x)).join(' ').slice(0, 200)); } catch (_) {}
+        return orig.apply(console, a);
+      };
+      console.error = wrap(console.error, 'error');
+      console.warn = wrap(console.warn, 'warn');
+    })();
+    function __laidShimReply(msg) {
+      if (msg && msg.type === 'GET_SETTINGS') return { enabled: true, displayMode: 'badge', apiKey: '' };
+      if (msg && msg.type === 'ML_SCORE_REQUEST') return { success: false };
+      return { ok: true };
+    }
+    window.chrome = {
+      runtime: {
+        sendMessage(msg, cb) {
+          if (typeof cb === 'function') { setTimeout(() => cb(__laidShimReply(msg)), 0); return; }
+          return Promise.resolve(__laidShimReply(msg));
+        },
+        onMessage: { addListener() {}, removeListener() {} },
+        getManifest() { return { update_url: 'shim' }; },
+        lastError: null,
+      },
+      storage: {
+        local:   { get(_k, cb) { cb && cb({}); }, set(_v, cb) { cb && cb(); } },
+        session: { get(_k, cb) { cb && cb({}); }, set(_v, cb) { cb && cb(); } },
+      },
+    };
+  </script>
+
+  <!-- 2. Real extension, exact manifest order (self-installs observer + scroll sweep + IO). -->
+  <script src="../scoring/vocabulary.js"></script>
+  <script src="../scoring/structure.js"></script>
+  <script src="../scoring/stylometry.js"></script>
+  <script src="../scoring/linkedin.js"></script>
+  <script src="../scoring/ml-preprocess.js"></script>
+  <script src="../scoring/ml-detector.js"></script>
+  <script src="../scoring/engine.js"></script>
+  <script src="../content.js"></script>
+  <script src="../ui/overlay.js"></script>
+
+  <!-- 3. Calibrated heavy-post generator + virtualization/streaming simulator + monitor. -->
+  <script>
+  (function () {
+    const qp = new URLSearchParams(location.search);
+    const POSTS = Math.max(1, Number(qp.get('posts') || 40));   // initial posts rendered
+    const STREAM = qp.get('stream') !== '0';                    // stream more on scroll
+    const RECYCLE = qp.get('recycle') !== '0';                  // recycle off-screen nodes
+    // Calibration knobs — tuned to the live capture (~583 nodes, 29 <p>, 117 span, 55 btn/a).
+    const NMETA = Math.max(0, Number(qp.get('meta') || 22));    // short meta <p> per post
+    const NCOMMENTS = Math.max(0, Number(qp.get('comments') || 4)); // comments (each: long <p> + anchors → over-detection)
+    const NREACT = Math.max(0, Number(qp.get('react') || 8));   // reaction buttons/spans
+
+    const hud = document.getElementById('hud');
+    const feed = document.getElementById('feed');
+    const scroller = document.getElementById('scroller');
+    const setHud = (s) => { hud.textContent = s; };
+
+    const LOREM = ('lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor ' +
+      'incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ' +
+      'ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit ').split(' ');
+    const lorem = (n) => { let s = []; for (let i = 0; i < n; i++) s.push(LOREM[(i * 7 + 3) % LOREM.length]); return s.join(' '); };
+
+    let _uid = 0;
+    // Build one heavy, detectable post. Deep nesting + many <p>/<span>/buttons to match
+    // the real feed's weight, and SEVERAL long <p> (body + comments) near anchors so the
+    // content-first scan over-detects like reality.
+    function buildPost() {
+      const id = _uid++;
+      const post = document.createElement('div');
+      post.className = 'sim-post';
+      post.setAttribute('data-sim-post', String(id));
+
+      // header (anchors: profile link + timestamp + control-menu button)
+      const hdr = document.createElement('div');
+      hdr.className = 'sim-row hdr';
+      hdr.innerHTML =
+        '<a href="/in/example-' + id + '" class="actor"><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" width="40" height="40" alt=""><span class="nm">Example Author ' + id + '</span><span class="sub">Founder &amp; CEO</span></a>' +
+        '<span class="dot">·</span><span class="deg">3rd+</span><span class="ts">' + ((id % 12) + 1) + 'h</span>' +
+        '<button type="button" aria-label="Open control menu for post by Example Author ' + id + '">&#8943;</button>';
+      post.appendChild(hdr);
+
+      // body — nested chain ending in the long body <p>. Depth tuned so the post
+      // container is the body's 6th ancestor: findSemanticAnchors only walks UP 5
+      // ancestors, so this keeps the engagement anchors (header/social, children of
+      // .sim-post) inside the body's scope → the body passes the 2-anchor test and
+      // is detected per-post (one level deeper and detection silently collapses).
+      let chain = document.createElement('div'); chain.className = 'content';
+      let cur = chain;
+      for (let d = 0; d < 4; d++) { const w = document.createElement('div'); w.className = 'c' + d; cur.appendChild(w); cur = w; }
+      const bodyP = document.createElement('p'); bodyP.className = 'sim-body'; bodyP.setAttribute('dir', 'ltr');
+      bodyP.innerHTML = '<span>' + lorem(70) + '</span>';
+      cur.appendChild(bodyP);
+      post.appendChild(chain);
+
+      // meta lines — many short <p> wrapped in spans (candidate volume + span volume)
+      const meta = document.createElement('div'); meta.className = 'sim-meta';
+      for (let m = 0; m < NMETA; m++) {
+        const row = document.createElement('div'); row.className = 'metarow';
+        const p = document.createElement('p');
+        p.innerHTML = '<span class="k">' + lorem(2) + '</span> <span class="v">' + lorem(3) + '</span>';
+        row.appendChild(p); meta.appendChild(row);
+      }
+      post.appendChild(meta);
+
+      // engagement bar — buttons + reaction spans
+      const social = document.createElement('div'); social.className = 'sim-row social';
+      let socHtml = '<button type="button">Like</button><button type="button">Comment</button>' +
+        '<button type="button">Repost</button><a href="#" role="button">Send</a>';
+      for (let r = 0; r < NREACT; r++) socHtml += '<button type="button" class="rx"><span>' + lorem(1) + '</span></button>';
+      social.innerHTML = socHtml;
+      post.appendChild(social);
+
+      // comments — each has an author link + a LONG <p> (≥50 chars) + like/reply buttons.
+      // The long <p> sits near 2+ anchors → content-first detects each as a "post" →
+      // reproduces the live over-detection (≈5 detected per 1 real post).
+      const comments = document.createElement('div'); comments.className = 'comments';
+      for (let c = 0; c < NCOMMENTS; c++) {
+        const cm = document.createElement('div'); cm.className = 'sim-comment';
+        cm.innerHTML =
+          '<a href="/in/commenter-' + id + '-' + c + '"><span>Commenter ' + c + '</span></a>' +
+          '<span class="ct">' + ((c % 9) + 1) + 'h</span>' +
+          '<p dir="ltr"><span>' + lorem(18) + '</span></p>' +
+          '<button type="button">Like</button><button type="button">Reply</button>' +
+          '<span class="lk">' + (c * 3) + ' likes</span>';
+        comments.appendChild(cm);
+      }
+      post.appendChild(comments);
+      padToTarget(post);
+      return post;
+    }
+
+    // Pad each post up to the live-captured weight (~583 nodes, ~117 span, ~55 btn/a)
+    // WITHOUT adding <p>/span.break-words/div[dir=ltr] (so the candidate count and
+    // detection behaviour stay calibrated). The filler is the deep wrapper-div +
+    // span + non-matching-button soup LinkedIn actually ships; it inflates the
+    // traversal + ancestor-walk + findSemanticAnchors cost to match reality. Counts
+    // are tracked manually (no per-iteration querySelectorAll) to keep build O(n).
+    function padToTarget(post) {
+      const T = { nodes: 583, spans: 117, btns: 55 };
+      const pad = document.createElement('div'); pad.className = 'sim-pad';
+      post.appendChild(pad);
+      let nodes = post.getElementsByTagName('*').length;
+      let btns = post.querySelectorAll('button, a, [role="button"]').length;
+      let spans = post.querySelectorAll('span').length;
+      while (btns < T.btns) { // non-matching buttons (realistic: most post buttons aren't like/comment)
+        const b = document.createElement('button'); b.type = 'button';
+        const s = document.createElement('span'); s.textContent = lorem(1); b.appendChild(s);
+        pad.appendChild(b); btns++; spans++; nodes += 2;
+      }
+      while (spans < T.spans) { const s = document.createElement('span'); s.textContent = lorem(2); pad.appendChild(s); spans++; nodes++; }
+      let host = pad, depthCount = 0;
+      while (nodes < T.nodes) { const d = document.createElement('div'); host.appendChild(d); nodes++; host = (++depthCount % 6 === 0) ? pad : d; }
+    }
+
+    // ── self-calibration report: do our generated posts match the live capture? ──
+    function calibrate() {
+      const sample = buildPost();
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:absolute;left:-99999px;top:0;width:560px';
+      probe.appendChild(sample);
+      document.body.appendChild(probe);
+      const cal = {
+        nodesPerPost: sample.getElementsByTagName('*').length,
+        pPerPost: sample.querySelectorAll('p').length,
+        spanPerPost: sample.querySelectorAll('span').length,
+        btnPerPost: sample.querySelectorAll('button, a, [role="button"]').length,
+        candPerPost: sample.querySelectorAll('p, span.break-words, div[dir="ltr"]').length,
+      };
+      document.body.removeChild(probe);
+      // live reference (read-only capture): nodes~583 p~29 span~117 btn~55
+      cal.target = { nodesPerPost: 583, pPerPost: 29, spanPerPost: 117, btnPerPost: 55 };
+      try { document.documentElement.setAttribute('data-laid-cal', JSON.stringify(cal)); } catch (_) {}
+      window.__laidCal = cal;
+      return cal;
+    }
+
+    // ── render initial feed ──
+    function renderInitial(n) {
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < n; i++) frag.appendChild(buildPost());
+      feed.appendChild(frag);
+    }
+
+    // ── streaming + recycling simulator ──
+    // Streams new posts when the scroll nears the bottom (like LinkedIn's lazy-load),
+    // and recycles posts scrolled well above the viewport (reuse the node for new
+    // content — the behavior our dedup/fingerprint has to survive).
+    let _streamed = 0, _recycled = 0, _streaming = false;
+    function maybeStream() {
+      if (!STREAM || _streaming) return;
+      const nearBottom = scroller.scrollTop + scroller.clientHeight > scroller.scrollHeight - scroller.clientHeight * 1.5;
+      if (!nearBottom) return;
+      _streaming = true;
+      // mimic XHR/stream latency, then append a burst
+      setTimeout(() => {
+        const burst = 6;
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < burst; i++) { frag.appendChild(buildPost()); _streamed++; }
+        feed.insertBefore(frag, feed.lastChild ? null : null); // append at end
+        feed.appendChild(frag);
+        _streaming = false;
+      }, 120);
+    }
+    function maybeRecycle() {
+      if (!RECYCLE) return;
+      // Recycle posts whose bottom is far above the viewport: swap their content for a
+      // brand-new post in place (same node reused) — exactly LinkedIn's virtualization.
+      const top = scroller.scrollTop;
+      const posts = feed.querySelectorAll('.sim-post');
+      for (const p of posts) {
+        if (p.offsetTop + p.offsetHeight < top - scroller.clientHeight * 2) {
+          const fresh = buildPost();
+          p.replaceChildren(...fresh.childNodes); // reuse p, swap content
+          p.setAttribute('data-sim-post', fresh.getAttribute('data-sim-post'));
+          _recycled++;
+        }
+      }
+    }
+
+    // LinkedIn-style churn: periodically tweak a reaction count span on visible posts,
+    // generating the constant mutation stream our MutationObserver has to cope with.
+    function churn() {
+      const posts = feed.querySelectorAll('.sim-post');
+      let n = 0;
+      for (const p of posts) {
+        const lk = p.querySelector('.lk');
+        if (lk) { lk.textContent = (Math.random() * 99 | 0) + ' likes'; if (++n > 12) break; }
+      }
+    }
+
+    // ── independent monitor: real frame drops + badge coverage over the scroll ──
+    const mon = { frames: 0, dropped: 0, worst: 0, last: 0, samples: [], started: 0 };
+    function frameTick(ts) {
+      if (mon.last) { const d = ts - mon.last; mon.frames++; if (d > 32) mon.dropped++; if (d > mon.worst) mon.worst = d; }
+      mon.last = ts;
+      requestAnimationFrame(frameTick);
+    }
+    function visiblePosts() {
+      const posts = feed.querySelectorAll('.sim-post'); let vis = 0, badged = 0;
+      const h = scroller.clientHeight, top = scroller.scrollTop;
+      for (const p of posts) {
+        const o = p.offsetTop, b = o + p.offsetHeight;
+        if (b > top && o < top + h) { vis++; if (p.querySelector('.laid-score-badge')) badged++; }
+      }
+      return { vis, badged };
+    }
+
+    function publish(extra) {
+      const cov = visiblePosts();
+      const growth = document.documentElement.getAttribute('data-laid-growth');
+      const r = Object.assign({
+        posts: feed.querySelectorAll('.sim-post').length,
+        streamed: _streamed, recycled: _recycled,
+        frames: mon.frames, dropped: mon.dropped, worstFrameMs: Math.round(mon.worst),
+        visible: cov.vis, badgedVisible: cov.badged,
+        coverage: cov.vis ? Math.round((cov.badged / cov.vis) * 100) : null,
+        errors: (window.__laidErrors || []).filter(e => !/scorePostSync not available/i.test(e)).length,
+        growth, cal: window.__laidCal,
+      }, extra || {});
+      window.__laidReal = r;
+      try { document.documentElement.setAttribute('data-laid-real', JSON.stringify(r)); } catch (_) {}
+      return r;
+    }
+
+    // hook scroll to drive the simulator (real scroll events come from the CDP runner)
+    scroller.addEventListener('scroll', () => { maybeStream(); maybeRecycle(); }, { passive: true });
+    // churn on a timer regardless of scroll (LinkedIn churns constantly)
+    setInterval(churn, 250);
+    // periodic HUD + beacon refresh
+    setInterval(() => {
+      const r = publish();
+      setHud(
+        'cal nodes/p=' + (r.cal ? r.cal.nodesPerPost : '?') + ' p=' + (r.cal ? r.cal.pPerPost : '?') +
+        ' span=' + (r.cal ? r.cal.spanPerPost : '?') + ' btn=' + (r.cal ? r.cal.btnPerPost : '?') +
+        '\nposts=' + r.posts + ' streamed=' + r.streamed + ' recycled=' + r.recycled +
+        '\nframes=' + r.frames + ' dropped=' + r.dropped + ' worst=' + r.worstFrameMs + 'ms' +
+        '\nvisible=' + r.visible + ' badged=' + r.badgedVisible + ' coverage=' + r.coverage + '%' +
+        ' errors=' + r.errors + '\n' + (r.growth || '')
+      );
+    }, 500);
+
+    // ── boot ──
+    const cal = calibrate();
+    renderInitial(POSTS);
+    requestAnimationFrame(frameTick);
+    publish({ booted: true });
+    setHud('booted: ' + POSTS + ' posts; cal=' + JSON.stringify(cal));
+    // Give the REAL pipeline time to scan + badge before a runner reads the verdict,
+    // so a 0% coverage means a real badge-failure, not just "too early".
+    const SETTLE = Math.max(0, Number(qp.get('settle') || 4000));
+    setTimeout(() => { window.__laidRealReady = true; publish({ settled: true }); }, SETTLE);
+    // expose a manual reset of the monitor so the runner can zero it right before scrolling
+    window.__laidResetMonitor = () => { mon.frames = 0; mon.dropped = 0; mon.worst = 0; mon.last = 0; };
+  })();
+  </script>
+</body>
+</html>

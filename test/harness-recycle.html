@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<!--
+  LinkedIn AI Detector — RECYCLE correctness probe (instrument 4 / Cause C, bug #2)
+
+  Reproduces, offline and deterministically, the "badges stop / show a stale score
+  on scroll-loaded posts" bug. LinkedIn's feed virtualization RECYCLES a post's DOM
+  node: the same container element stays in the document, but its body text is
+  swapped for a different post. Our overlay (the .laid-score-badge + the
+  data-laid-scored marker + the .laid-container class) was added to that container,
+  so it survives the swap. The scan's dedup then sees "this container already has a
+  badge" and skips it forever — so the recycled node keeps the OLD post's score and
+  the new post is never re-scored.
+
+  This harness scores post A on a container, simulates a recycle by replacing the
+  body text with post B IN PLACE (badge + marker left intact), re-runs the scan, and
+  asserts the badge now reads score(B), not score(A).
+
+    EXPECTED RED on current code (the bug). GREEN after Fix C (content-keyed dedup).
+
+  Deterministic: __laid_test=true, so processAllPosts() drains its queues and a
+  single call fully settles — no IntersectionObserver / scroll timing involved.
+
+  Serve over HTTP (file:// fetch of the scripts is fine as relative <script>, but
+  keep parity with the other harnesses):
+      python3 -m http.server 8754      # from repo root
+      open http://localhost:8754/test/harness-recycle.html
+  Machine-readable verdict: window.__laidRecycle and <html data-laid-recycle="...">.
+-->
+<head>
+  <meta charset="utf-8">
+  <title>LAID recycle probe</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    html, body { margin: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    #feed-root { padding: 16px; margin-right: 440px; }
+    #out {
+      position: fixed; top: 0; right: 0; width: 420px; height: 100vh;
+      margin: 0; padding: 12px; box-sizing: border-box; overflow: auto;
+      background: #14161a; color: #d7dbe0; z-index: 2147483647;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .laid-pass { color: #5dd55d; font-weight: 700; }
+    .laid-fail { color: #ff6b6b; font-weight: 700; }
+    .laid-dim  { color: #8a93a0; }
+  </style>
+</head>
+<body>
+  <div id="feed-root"></div>
+  <pre id="out">loading…</pre>
+
+  <!-- 1. Shim chrome.* + test mode BEFORE any extension script runs (same as harness.html). -->
+  <script>
+    try { localStorage.setItem('laid_debug', '1'); } catch (_) {}
+    window.__laid_test = true; // deterministic: no MutationObserver / scroll / IO
+    function __laidShimReply(msg) {
+      if (msg && msg.type === 'GET_SETTINGS') return { enabled: true, displayMode: 'badge', apiKey: '' };
+      if (msg && msg.type === 'ML_SCORE_REQUEST') return { success: false }; // heuristic-only offline
+      return { ok: true };
+    }
+    window.chrome = {
+      runtime: {
+        sendMessage(msg, cb) {
+          if (typeof cb === 'function') { setTimeout(() => cb(__laidShimReply(msg)), 0); return; }
+          return Promise.resolve(__laidShimReply(msg));
+        },
+        onMessage: { addListener() {}, removeListener() {} },
+        getManifest() { return { update_url: 'shim' }; },
+        lastError: null,
+      },
+      storage: {
+        local:   { get(_k, cb) { cb && cb({}); }, set(_v, cb) { cb && cb(); } },
+        session: { get(_k, cb) { cb && cb({}); }, set(_v, cb) { cb && cb(); } },
+      },
+    };
+  </script>
+
+  <!-- 2. Extension scripts in EXACT manifest order. -->
+  <script src="../scoring/vocabulary.js"></script>
+  <script src="../scoring/structure.js"></script>
+  <script src="../scoring/stylometry.js"></script>
+  <script src="../scoring/linkedin.js"></script>
+  <script src="../scoring/ml-preprocess.js"></script>
+  <script src="../scoring/ml-detector.js"></script>
+  <script src="../scoring/engine.js"></script>
+  <script src="../content.js"></script>
+  <script src="../ui/overlay.js"></script>
+
+  <!-- 3. Probe driver. -->
+  <script>
+  (async function () {
+    const out = document.getElementById('out');
+    out.textContent = '';
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const log = (s, cls) => out.insertAdjacentHTML('beforeend', `<span class="${cls || ''}">${esc(s)}</span>\n`);
+
+    function publish(result) {
+      window.__laidRecycle = result;
+      try { document.documentElement.setAttribute('data-laid-recycle', JSON.stringify(result)); } catch (_) {}
+    }
+    function fail(note, extra) {
+      const r = Object.assign({ pass: false, error: note }, extra || {});
+      log('ERROR: ' + note, 'laid-fail');
+      publish(r);
+    }
+
+    // Two PII-free bodies whose heuristic scores differ — A reads casual/human,
+    // B is dense with the promotional/listicle phrasing the heuristic flags. The
+    // probe is only discriminating if score(A) !== score(B); we assert that.
+    const TEXT_A =
+      "honestly not every week is a highlight reel and mine was pretty messy. i missed a " +
+      "deadline, said sorry to a teammate, and learned that asking for help early beats " +
+      "pretending everything is fine. anyway, back at it tomorrow with a clearer head.";
+    const TEXT_B =
+      "I'm thrilled to share a profound realization about leadership in today's rapidly " +
+      "evolving landscape. Leveraging synergies isn't just important, it's absolutely " +
+      "essential. Here are three key takeaways that will fundamentally transform your " +
+      "mindset. First, embrace the journey. Second, unlock your true potential. Third, " +
+      "elevate every interaction. The results speak for themselves.";
+
+    // Faithful single-post markup, copied from fixtures/feed-synthetic.html (the
+    // proven-detectable shape): control-menu button + profile link + timestamp +
+    // engagement controls give the 2+ semantic anchors content-first needs, and the
+    // body is a <span> inside a <p dir="ltr"> (only the <p> selector tier matches).
+    function makePost(body) {
+      return `
+        <div class="_8f2a1c scaffold-layout__main" role="main">
+          <div class="a93b2e1 feed-list">
+            <div class="b71c4d0 feed-item f3335b76" data-test-post>
+              <div class="c0ffee1 update-header">
+                <a href="/in/example-slug" class="d11ee22 author-link">
+                  <span class="aa11bb author-name">Jane Example</span>
+                </a>
+                <span class="bb22cc author-subline">Founder &amp; CEO · 3rd+</span>
+                <span class="cc33dd post-timestamp">3h</span>
+                <button type="button" aria-label="Open control menu for post by Jane Example" class="dd44ee menu-btn">&#8943;</button>
+              </div>
+              <div class="ee55ff update-content">
+                <div class="ff66aa text-wrap">
+                  <p class="aa77bb body-paragraph" dir="ltr"><span class="bb88cc line-clamp">${esc(body)}</span></p>
+                </div>
+              </div>
+              <div class="aa99bb social-actions">
+                <button type="button" class="like-btn">Like</button>
+                <button type="button" class="comment-btn">Comment</button>
+                <button type="button" class="repost-btn">Repost</button>
+                <a href="#" role="button" class="send-btn">Send</a>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    if (typeof scorePostSync !== 'function') return fail('scorePostSync global missing — scoring scripts did not load');
+    if (!window.__laid || typeof window.__laid.processAllPosts !== 'function') return fail('window.__laid hook missing — content.js did not expose its test handle');
+
+    // The score the pipeline WOULD assign to each body (it NFKC-normalizes first).
+    const expectA = scorePostSync(TEXT_A.normalize('NFKC')).score;
+    const expectB = scorePostSync(TEXT_B.normalize('NFKC')).score;
+    log(`score(A) = ${expectA}   score(B) = ${expectB}`, 'laid-dim');
+    if (expectA === expectB) {
+      return fail(`non-discriminating fixture: score(A) === score(B) === ${expectA}; pick different bodies`, { scoreA: expectA, scoreB: expectB });
+    }
+
+    const root = document.getElementById('feed-root');
+    const readBadgeScore = () => {
+      const b = root.querySelector('.laid-score-badge');
+      return b ? Number(b.getAttribute('data-score')) : null;
+    };
+
+    // ── Phase 1: score post A on the container. ──
+    root.innerHTML = makePost(TEXT_A);
+    window.__laid.resetCounters();
+    window.__laid.resetQueue();
+    await new Promise(r => setTimeout(r, 30));
+    await window.__laid.processAllPosts();
+    await new Promise(r => setTimeout(r, 30));
+
+    const measuredA = readBadgeScore();
+    const container = root.querySelector('[data-laid-scored]');
+    const badgeA = root.querySelector('.laid-score-badge');
+    log(`phase 1 (render A): badge=${measuredA} marker=${!!container} fp=${container ? container.getAttribute('data-laid-fp') : '—'}`);
+    if (!container || !badgeA) return fail('post A was not detected/badged — fixture or detection broken', { scoreA: expectA, scoreB: expectB, measuredA });
+    if (measuredA !== expectA) log(`  note: badge(${measuredA}) != score(A)(${expectA}) — pipeline may have re-scored; continuing`, 'laid-dim');
+
+    // ── Phase 2: RECYCLE in place. Replace the body text A → B but leave the
+    // badge, the data-laid-scored marker, and .laid-container intact — exactly
+    // what LinkedIn's virtual scroll does when it reuses this node for a new post.
+    const bodyP = root.querySelector('p[dir="ltr"]');
+    bodyP.textContent = TEXT_B;
+    const badgeStillThere = !!root.querySelector('.laid-score-badge');
+    const markerStillThere = container.hasAttribute('data-laid-scored');
+    log(`phase 2 (recycle A→B in place): badge kept=${badgeStillThere} marker kept=${markerStillThere}`);
+
+    // ── Phase 3: re-scan (a fresh scroll/mutation sweep would do this). ──
+    window.__laid.resetCounters();
+    await window.__laid.processAllPosts();
+    await new Promise(r => setTimeout(r, 30));
+
+    const measuredAfter = readBadgeScore();
+    const c2 = root.querySelector('[data-laid-scored]');
+    log(`phase 3 (re-scan): badge=${measuredAfter} fp=${c2 ? c2.getAttribute('data-laid-fp') : '—'} counters=${JSON.stringify(window.__laid.getCounters())}`, 'laid-dim');
+
+    const pass = measuredAfter === expectB && expectA !== expectB;
+    log('');
+    log(`RESULT: ${pass ? 'PASS (recycled node re-scored)' : 'FAIL (stale score — bug #2)'} — after recycle badge=${measuredAfter}, expected score(B)=${expectB} (was score(A)=${expectA})`,
+        pass ? 'laid-pass' : 'laid-fail');
+
+    publish({
+      pass,
+      scoreA: expectA,
+      scoreB: expectB,
+      measuredA,
+      measuredAfterRecycle: measuredAfter,
+      discriminating: expectA !== expectB,
+    });
+  })().catch((e) => {
+    const out = document.getElementById('out');
+    if (out) out.insertAdjacentHTML('beforeend', `<span class="laid-fail">EXCEPTION: ${String(e && e.message || e)}</span>\n`);
+    const r = { pass: false, error: String(e && e.message || e) };
+    window.__laidRecycle = r;
+    try { document.documentElement.setAttribute('data-laid-recycle', JSON.stringify(r)); } catch (_) {}
+  });
+  </script>
+</body>
+</html>

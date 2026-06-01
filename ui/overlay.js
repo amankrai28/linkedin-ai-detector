@@ -139,7 +139,7 @@ function updateScoreBadge(postContainer, result) {
       const live = document.querySelector(`[data-urn="${urn}"] .laid-score-badge`);
       if (live) {
         badge = live;
-        postContainer = live.closest('[data-ai-scored]') || live.parentElement;
+        postContainer = live.closest('[data-laid-scored]') || live.parentElement;
       }
     }
   }
@@ -248,6 +248,12 @@ function renderScoreBadge(postContainer, postText, result, opts = {}) {
     openBreakdownCard(postContainer, badge);
   });
 
+  // Insert synchronously. The badge is position:absolute relative to a
+  // position:relative container (.laid-container), so appendChild doesn't
+  // cause flow-affecting layout shift — there's no jank benefit to rAF
+  // batching here, and the previous batcher had a real risk of dropping
+  // badges when LinkedIn's virtual scroll detached the container in the
+  // 16ms gap between schedule and flush.
   postContainer.appendChild(badge);
 
   // Auto-expand for "badge + auto-expand" display mode. Skip partial-analysis

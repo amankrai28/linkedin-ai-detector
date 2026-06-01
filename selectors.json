@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "updated": "2026-05-31",
+  "_comment": "Remote selector config for the LinkedIn AI Detector. This is the file that lets you fix LinkedIn DOM changes WITHOUT shipping a new extension package: edit it, commit to the default branch, and installed extensions pick it up within a few hours (background.js fetches it on launch + on a 6h alarm). It is DATA, not code (Chrome Web Store compliant). The extension always ships with these same values bundled as a fallback, so if this file is missing/unreachable/invalid, detection still works on the built-in defaults. Keys mirror LAID_DEFAULT_CONFIG in content.js. Bump 'version' whenever you change selectors so clients know to apply the update.",
+  "selectors": {
+    "feedRoot": ["[data-testid=\"mainFeed\"]", "main [role=\"list\"]", "[role=\"list\"]"],
+    "postItem": "[role=\"listitem\"]",
+    "postMarker": "button[aria-label^=\"Open control menu for post by\"]",
+    "commentMarker": "button[aria-label*=\"comment\" i][aria-label*=\"option\" i]"
+  }
+}
