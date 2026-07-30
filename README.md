@@ -2,7 +2,7 @@
 
 A Chrome extension that overlays an AI-likelihood score on every LinkedIn post in your feed. Local-first, privacy-respecting, open source.
 
-> ⚠️ **Honest framing.** This is an **AI-pattern detector**, not a verdict.
+> ⚠️ **Note** This is an **AI-pattern detector**, not a verdict.
 > No detector — including this one — reliably distinguishes lightly-edited AI
 > from human writing on LinkedIn. We measure heuristic signals and an ML
 > probability, then leave interpretation to you.
